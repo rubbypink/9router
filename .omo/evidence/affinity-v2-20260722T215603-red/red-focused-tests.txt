@@ -1,0 +1,387 @@
+scenario: affinity-v2 focused tests before implementation
+command: ./node_modules/.bin/vitest run --config tests/vitest.config.js tests/unit/thread-routing.test.js tests/unit/session-affinity-v2.test.js tests/unit/session-affinity-db.test.js tests/unit/session-affinity-auth.test.js
+started_at: 2026-07-22T21:56:03+07:00
+
+
+ RUN  v3.2.4 /Users/alextran119/Code/9router
+
+stdout | tests/unit/session-affinity-auth.test.js > session-aware authentication selection > bypasses the cursor for an already-bound eligible account
+[21:56:03] ℹ️  [AUTH] codex | pinned to account- (unnamed)
+
+ ❯ tests/unit/session-affinity-auth.test.js (6 tests | 2 failed) 17ms
+   × session-aware authentication selection > uses strict persistent A/B/A selection for new affinity sessions 6ms
+     → expected { authType: 'oauth', …(16) } to match object { connectionId: 'account-b' }
+(27 matching properties omitted from actual)
+   × session-aware authentication selection > hands the cursor connections ordered by priority then ID 1ms
+     → expected "spy" to be called with arguments: [ 'codex', …(1) ]
+
+Number of calls: 0
+
+   ✓ session-aware authentication selection > bypasses the cursor for an already-bound eligible account 9ms
+   ✓ session-aware authentication selection > retains legacy sticky round robin for sessionless traffic 1ms
+   ✓ session-aware authentication selection > keeps sessionless sticky limits when the current account is exhausted 0ms
+   ✓ session-aware authentication selection > does not use sticky limits for an unbound affinity session 0ms
+ ✓ tests/unit/thread-routing.test.js (11 tests) 6ms
+ ❯ tests/unit/session-affinity-v2.test.js (16 tests | 15 failed) 11ms
+   ✓ session affinity v2 identity > defaults enabled when no affinity environment value is supplied 0ms
+   × session affinity v2 identity > lets SESSION_AFFINITY_ENABLED override the legacy flag 4ms
+     → expected true to be false // Object.is equality
+   × session affinity v2 identity > retains CODEX_THREAD_AFFINITY when the v2 flag is absent 0ms
+     → expected true to be false // Object.is equality
+   × session affinity v2 identity > namespaces Codex v2 identities while retaining the legacy lookup key 2ms
+     → expected { source: 'thread-id', …(1) } to match object { Object (client, source) }
+(1 matching property omitted from actual)
+   × session affinity v2 identity > uses a distinct namespace for OpenCode session affinity 0ms
+     → expected null to match object { client: 'opencode', …(1) }
+   × session affinity v2 identity > rejects conflicting Codex aliases 0ms
+     → expected [Function] to match object { …(2) }
+   × session affinity v2 identity > requires matching OpenCode affinity and session headers 0ms
+     → expected [Function] to match object { …(2) }
+   × session affinity v2 identity > accepts matching OpenCode affinity and session headers 0ms
+     → expected { source: 'x-session-id', …(1) } to match object { client: 'opencode', …(1) }
+(1 matching property omitted from actual)
+   × session affinity v2 identity > rejects conflicting aliases in the generic legacy session group 0ms
+     → expected [Function] to match object { …(2) }
+   × session affinity v2 identity > keeps a parent session diagnostic-only 0ms
+     → Cannot read properties of null (reading 'sessionKey')
+   × session affinity v2 route coordinator > stores model choices by route alias while retaining a same-provider connection 1ms
+     → this.store?.get is not a function
+   × session affinity v2 route coordinator > keeps provider connections independent inside one session 0ms
+     → this.store?.get is not a function
+   × session affinity v2 route coordinator > increments route epoch and records a controlled rebind reason 0ms
+     → this.store?.get is not a function
+   × session affinity v2 route coordinator > does not rebind a route without an eligible reason 0ms
+     → this.store?.get is not a function
+   × session affinity v2 route coordinator > lazily migrates a legacy route without changing its bound account 0ms
+     → this.store?.get is not a function
+   × session affinity v2 route coordinator > performs lazy TTL cleanup before reading a session 0ms
+     → this.store?.get is not a function
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/session-affinity-db.test.js [ tests/unit/session-affinity-db.test.js ]
+Error: Cannot find module '../../src/lib/db/migrations/003-session-affinity-v2.js' imported from '/Users/alextran119/Code/9router/tests/unit/session-affinity-db.test.js'
+ ❯ tests/unit/session-affinity-db.test.js:6:1
+      4| import { afterEach, beforeEach, describe, expect, it, vi } from "vites…
+      5| import { createSqlJsAdapter } from "../../src/lib/db/adapters/sqljsAda…
+      6| import migration from "../../src/lib/db/migrations/003-session-affinit…
+       | ^
+      7| 
+      8| let adapter;
+
+Caused by: Error: Failed to load url ../../src/lib/db/migrations/003-session-affinity-v2.js (resolved id: ../../src/lib/db/migrations/003-session-affinity-v2.js) in /Users/alextran119/Code/9router/tests/unit/session-affinity-db.test.js. Does the file exist?
+ ❯ loadAndTransform node_modules/vite/dist/node/chunks/config.js:22739:33
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/18]⎯
+
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 17 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/session-affinity-auth.test.js > session-aware authentication selection > uses strict persistent A/B/A selection for new affinity sessions
+AssertionError: expected { authType: 'oauth', …(16) } to match object { connectionId: 'account-b' }
+(27 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "connectionId": "account-b",
++   "connectionId": "account-a",
+  }
+
+ ❯ tests/unit/session-affinity-auth.test.js:84:5
+     82| 
+     83|     await expect(getProviderCredentials("codex", null, "gpt", { sessio…
+     84|     await expect(getProviderCredentials("codex", null, "gpt", { sessio…
+       |     ^
+     85|     await expect(getProviderCredentials("codex", null, "gpt", { sessio…
+     86|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/18]⎯
+
+ FAIL  tests/unit/session-affinity-auth.test.js > session-aware authentication selection > hands the cursor connections ordered by priority then ID
+AssertionError: expected "spy" to be called with arguments: [ 'codex', …(1) ]
+
+Number of calls: 0
+
+ ❯ tests/unit/session-affinity-auth.test.js:94:25
+     92|     await getProviderCredentials("codex", null, "gpt", { sessionKey: "…
+     93| 
+     94|     expect(state.claim).toHaveBeenCalledWith("codex", [expect.objectCo…
+       |                         ^
+     95|   });
+     96| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/18]⎯
+
+ FAIL  tests/unit/session-affinity-v2.test.js > session affinity v2 identity > lets SESSION_AFFINITY_ENABLED override the legacy flag
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ tests/unit/session-affinity-v2.test.js:52:9
+     50|       SESSION_AFFINITY_ENABLED: "false",
+     51|       CODEX_THREAD_AFFINITY: "true",
+     52|     })).toBe(false);
+       |         ^
+     53|   });
+     54| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/18]⎯
+
+ FAIL  tests/unit/session-affinity-v2.test.js > session affinity v2 identity > retains CODEX_THREAD_AFFINITY when the v2 flag is absent
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ tests/unit/session-affinity-v2.test.js:56:78
+     54| 
+     55|   it("retains CODEX_THREAD_AFFINITY when the v2 flag is absent", () =>…
+     56|     expect(isCodexThreadAffinityEnabled({ CODEX_THREAD_AFFINITY: "fals…
+       |                                                                              ^
+     57|   });
+     58| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/18]⎯
+
+ FAIL  tests/unit/session-affinity-v2.test.js > session affinity v2 identity > namespaces Codex v2 identities while retaining the legacy lookup key
+AssertionError: expected { source: 'thread-id', …(1) } to match object { Object (client, source) }
+(1 matching property omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "client": "codex",
+    "source": "thread-id",
+  }
+
+ ❯ tests/unit/session-affinity-v2.test.js:62:22
+     60|     const identity = resolveThreadIdentity({ headers: { "thread-id": "…
+     61| 
+     62|     expect(identity).toMatchObject({ client: "codex", source: "thread-…
+       |                      ^
+     63|     expect(identity.sessionKey).toMatch(/^[a-f0-9]{64}$/);
+     64|     expect(identity.legacySessionKey).toMatch(/^[a-f0-9]{64}$/);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/18]⎯
+
+ FAIL  tests/unit/session-affinity-v2.test.js > session affinity v2 identity > uses a distinct namespace for OpenCode session affinity
+AssertionError: expected null to match object { client: 'opencode', …(1) }
+
+- Expected: 
+{
+  "client": "opencode",
+  "source": "x-session-affinity",
+}
+
++ Received: 
+null
+
+ ❯ tests/unit/session-affinity-v2.test.js:73:22
+     71|     const opencode = resolveThreadIdentity({ headers: { "x-session-aff…
+     72| 
+     73|     expect(opencode).toMatchObject({ client: "opencode", source: "x-se…
+       |                      ^
+     74|     expect(opencode.sessionKey).not.toBe(codex.sessionKey);
+     75|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/18]⎯
+
+ FAIL  tests/unit/session-affinity-v2.test.js > session affinity v2 identity > rejects conflicting Codex aliases
+AssertionError: expected [Function] to match object { …(2) }
+
+- Expected: 
+{
+  "code": "thread_identity_mismatch",
+  "status": 400,
+}
+
++ Received: 
+[Function anonymous]
+
+ ❯ tests/unit/session-affinity-v2.test.js:81:9
+     79|       headers: { "thread-id": "thread-a" },
+     80|       body: { client_metadata: { thread_id: "thread-b" } },
+     81|     })).toMatchObject({ code: "thread_identity_mismatch", status: 400 …
+       |         ^
+     82|   });
+     83| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/18]⎯
+
+ FAIL  tests/unit/session-affinity-v2.test.js > session affinity v2 identity > requires matching OpenCode affinity and session headers
+AssertionError: expected [Function] to match object { …(2) }
+
+- Expected: 
+{
+  "code": "thread_identity_mismatch",
+  "status": 400,
+}
+
++ Received: 
+[Function anonymous]
+
+ ❯ tests/unit/session-affinity-v2.test.js:87:9
+     85|     expect(() => resolveThreadIdentity({
+     86|       headers: { "x-session-affinity": "session-a", "x-session-id": "s…
+     87|     })).toMatchObject({ code: "thread_identity_mismatch", status: 400 …
+       |         ^
+     88|   });
+     89| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/18]⎯
+
+ FAIL  tests/unit/session-affinity-v2.test.js > session affinity v2 identity > accepts matching OpenCode affinity and session headers
+AssertionError: expected { source: 'x-session-id', …(1) } to match object { client: 'opencode', …(1) }
+(1 matching property omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "client": "opencode",
+-   "source": "x-session-affinity",
++   "source": "x-session-id",
+  }
+
+ ❯ tests/unit/session-affinity-v2.test.js:93:9
+     91|     expect(resolveThreadIdentity({
+     92|       headers: { "x-session-affinity": "session-a", "x-session-id": "s…
+     93|     })).toMatchObject({ client: "opencode", source: "x-session-affinit…
+       |         ^
+     94|   });
+     95| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/18]⎯
+
+ FAIL  tests/unit/session-affinity-v2.test.js > session affinity v2 identity > rejects conflicting aliases in the generic legacy session group
+AssertionError: expected [Function] to match object { …(2) }
+
+- Expected: 
+{
+  "code": "thread_identity_mismatch",
+  "status": 400,
+}
+
++ Received: 
+[Function anonymous]
+
+ ❯ tests/unit/session-affinity-v2.test.js:99:9
+     97|     expect(() => resolveThreadIdentity({
+     98|       headers: { "session-id": "session-a", session_id: "session-b" },
+     99|     })).toMatchObject({ code: "thread_identity_mismatch", status: 400 …
+       |         ^
+    100|   });
+    101| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/18]⎯
+
+ FAIL  tests/unit/session-affinity-v2.test.js > session affinity v2 identity > keeps a parent session diagnostic-only
+TypeError: Cannot read properties of null (reading 'sessionKey')
+ ❯ tests/unit/session-affinity-v2.test.js:111:18
+    109|       headers: { "x-parent-session-id": "parent", "x-session-affinity"…
+    110|     });
+    111|     expect(first.sessionKey).not.toBe(second.sessionKey);
+       |                  ^
+    112|   });
+    113| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/18]⎯
+
+ FAIL  tests/unit/session-affinity-v2.test.js > session affinity v2 route coordinator > stores model choices by route alias while retaining a same-provider connection
+TypeError: this.store?.get is not a function
+ ❯ ThreadRouteCoordinator.getBinding open-sse/services/threadRouteCoordinator.js:92:37
+     90|   getBinding(threadKey, requestedModel) {
+     91|     if (!this.hydrated.has(threadKey)) {
+     92|       const persisted = this.store?.get(threadKey) || null;
+       |                                     ^
+     93|       if (persisted) this.bindings.set(threadKey, persisted);
+     94|       this.hydrated.add(threadKey);
+ ❯ ThreadRouteCoordinator.bindRoute open-sse/services/threadRouteCoordinator.js:111:27
+ ❯ tests/unit/session-affinity-v2.test.js:120:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/18]⎯
+
+ FAIL  tests/unit/session-affinity-v2.test.js > session affinity v2 route coordinator > keeps provider connections independent inside one session
+TypeError: this.store?.get is not a function
+ ❯ ThreadRouteCoordinator.getBinding open-sse/services/threadRouteCoordinator.js:92:37
+     90|   getBinding(threadKey, requestedModel) {
+     91|     if (!this.hydrated.has(threadKey)) {
+     92|       const persisted = this.store?.get(threadKey) || null;
+       |                                     ^
+     93|       if (persisted) this.bindings.set(threadKey, persisted);
+     94|       this.hydrated.add(threadKey);
+ ❯ ThreadRouteCoordinator.bindRoute open-sse/services/threadRouteCoordinator.js:111:27
+ ❯ tests/unit/session-affinity-v2.test.js:132:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/18]⎯
+
+ FAIL  tests/unit/session-affinity-v2.test.js > session affinity v2 route coordinator > increments route epoch and records a controlled rebind reason
+TypeError: this.store?.get is not a function
+ ❯ ThreadRouteCoordinator.getBinding open-sse/services/threadRouteCoordinator.js:92:37
+     90|   getBinding(threadKey, requestedModel) {
+     91|     if (!this.hydrated.has(threadKey)) {
+     92|       const persisted = this.store?.get(threadKey) || null;
+       |                                     ^
+     93|       if (persisted) this.bindings.set(threadKey, persisted);
+     94|       this.hydrated.add(threadKey);
+ ❯ ThreadRouteCoordinator.bindRoute open-sse/services/threadRouteCoordinator.js:111:27
+ ❯ tests/unit/session-affinity-v2.test.js:146:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[15/18]⎯
+
+ FAIL  tests/unit/session-affinity-v2.test.js > session affinity v2 route coordinator > does not rebind a route without an eligible reason
+TypeError: this.store?.get is not a function
+ ❯ ThreadRouteCoordinator.getBinding open-sse/services/threadRouteCoordinator.js:92:37
+     90|   getBinding(threadKey, requestedModel) {
+     91|     if (!this.hydrated.has(threadKey)) {
+     92|       const persisted = this.store?.get(threadKey) || null;
+       |                                     ^
+     93|       if (persisted) this.bindings.set(threadKey, persisted);
+     94|       this.hydrated.add(threadKey);
+ ❯ ThreadRouteCoordinator.bindRoute open-sse/services/threadRouteCoordinator.js:111:27
+ ❯ tests/unit/session-affinity-v2.test.js:163:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[16/18]⎯
+
+ FAIL  tests/unit/session-affinity-v2.test.js > session affinity v2 route coordinator > lazily migrates a legacy route without changing its bound account
+TypeError: this.store?.get is not a function
+ ❯ ThreadRouteCoordinator.getBinding open-sse/services/threadRouteCoordinator.js:92:37
+     90|   getBinding(threadKey, requestedModel) {
+     91|     if (!this.hydrated.has(threadKey)) {
+     92|       const persisted = this.store?.get(threadKey) || null;
+       |                                     ^
+     93|       if (persisted) this.bindings.set(threadKey, persisted);
+     94|       this.hydrated.add(threadKey);
+ ❯ tests/unit/session-affinity-v2.test.js:185:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[17/18]⎯
+
+ FAIL  tests/unit/session-affinity-v2.test.js > session affinity v2 route coordinator > performs lazy TTL cleanup before reading a session
+TypeError: this.store?.get is not a function
+ ❯ ThreadRouteCoordinator.getBinding open-sse/services/threadRouteCoordinator.js:92:37
+     90|   getBinding(threadKey, requestedModel) {
+     91|     if (!this.hydrated.has(threadKey)) {
+     92|       const persisted = this.store?.get(threadKey) || null;
+       |                                     ^
+     93|       if (persisted) this.bindings.set(threadKey, persisted);
+     94|       this.hydrated.add(threadKey);
+ ❯ tests/unit/session-affinity-v2.test.js:200:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[18/18]⎯
+
+
+ Test Files  3 failed | 1 passed (4)
+      Tests  17 failed | 16 passed (33)
+   Start at  21:56:03
+   Duration  341ms (transform 89ms, setup 0ms, collect 134ms, tests 33ms, environment 0ms, prepare 161ms)
+

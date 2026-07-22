@@ -1,0 +1,74 @@
+criterion: immutable release manager and health contract are initially absent from the live codebase
+scenario: new release-focused unit tests exercise missing release tooling and missing immutable health fields
+command: NODE_PATH=<repo>/node_modules <repo>/node_modules/.bin/vitest run --root <repo>/tests unit/release-manager.test.js unit/release-health-contract.test.js
+--- output ---
+
+ RUN  v3.2.4 /Users/alextran119/Code/9router/tests
+
+ ❯ unit/release-health-contract.test.js (1 test | 1 failed) 17ms
+   × 9router immutable health contract > reports the custom release fields and only a sanitized affinity snapshot 16ms
+     → expected { ok: true, service: '9router', …(5) } to match object { ok: true, service: '9router', …(6) }
+(10 matching properties omitted from actual)
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  unit/release-manager.test.js [ unit/release-manager.test.js ]
+Error: Cannot find module '../../cli/scripts/release-manager.js'
+Require stack:
+- /Users/alextran119/Code/9router/tests/unit/release-manager.test.js
+ ❯ unit/release-manager.test.js:23:5
+     21|   installRelease,
+     22|   rollbackRelease,
+     23| } = require("../../cli/scripts/release-manager.js");
+       |     ^
+     24| 
+     25| const CUSTOM_VERSION = "0.5.40-9trip.1";
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  unit/release-health-contract.test.js > 9router immutable health contract > reports the custom release fields and only a sanitized affinity snapshot
+AssertionError: expected { ok: true, service: '9router', …(5) } to match object { ok: true, service: '9router', …(6) }
+(10 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "affinitySchemaVersion": 3,
+-   "affinityStore": {
+-     "snapshot": {
+-       "activeThreads": 1,
+-       "maxPendingPerThread": 8,
+-       "pendingOperations": 2,
+-       "waitingOperations": 1,
+-     },
+-     "status": "enabled",
+-   },
+-   "customRevision": "0.5.40-9trip.1",
+    "ok": true,
+-   "routingContractVersion": "session-affinity/v2",
+    "service": "9router",
+    "threadAffinity": true,
+-   "upstreamVersion": "0.5.40",
+  }
+
+ ❯ unit/release-health-contract.test.js:51:18
+     49|     const body = await response.json();
+     50| 
+     51|     expect(body).toMatchObject({
+       |                  ^
+     52|       ok: true,
+     53|       service: "9router",
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  1 failed (1)
+   Start at  22:17:10
+   Duration  293ms (transform 32ms, setup 0ms, collect 16ms, tests 17ms, environment 0ms, prepare 91ms)
+
+observable: command exited 1; expected red state because release manager and immutable health fields are not implemented

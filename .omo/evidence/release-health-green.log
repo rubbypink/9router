@@ -1,0 +1,16 @@
+criterion: release lifecycle and immutable health contract pass their focused unit coverage
+scenario: archive staging validates the CLI syntax/version/manifest; activation rollback restores SQLite WAL/SHM; `/api/health` emits immutable and sanitized fields
+command: NODE_PATH=<repo>/node_modules <repo>/node_modules/.bin/vitest run --root <repo>/tests unit/release-manager.test.js unit/release-health-contract.test.js
+--- output ---
+
+ RUN  v3.2.4 /Users/alextran119/Code/9router/tests
+
+ ✓ unit/release-health-contract.test.js (1 test) 8ms
+ ✓ unit/release-manager.test.js (3 tests) 316ms
+
+ Test Files  2 passed (2)
+      Tests  4 passed (4)
+   Start at  22:21:53
+   Duration  558ms (transform 21ms, setup 0ms, collect 21ms, tests 324ms, environment 0ms, prepare 70ms)
+
+observable: focused release lifecycle and health contract tests passed

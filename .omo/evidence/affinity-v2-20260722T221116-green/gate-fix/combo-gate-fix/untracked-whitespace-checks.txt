@@ -1,0 +1,8 @@
+$ git diff --check
+$ git diff --no-index --check /dev/null open-sse/services/sessionRouteBindings.js
+untracked whitespace check clean: open-sse/services/sessionRouteBindings.js
+$ git diff --no-index --check /dev/null tests/unit/session-affinity-chat.test.js
+untracked whitespace check clean: tests/unit/session-affinity-chat.test.js
+$ git diff --no-index --check /dev/null tests/unit/session-affinity-v2.test.js
+untracked whitespace check clean: tests/unit/session-affinity-v2.test.js
+RESULT=PASS

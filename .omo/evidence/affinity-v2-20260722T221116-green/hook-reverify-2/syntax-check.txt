@@ -1,0 +1,1 @@
+node --check: all modified production affinity files parsed

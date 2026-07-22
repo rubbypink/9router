@@ -1,0 +1,31 @@
+Stop-hook verification attempt: 1
+Scope: 9router immutable release contract and the agents-platform port-manager release integration. No commit, deploy, or provider call was made.
+
+Criterion: fresh production build and release unit suite.
+Command: `npm run build && NODE_PATH="$PWD/node_modules" "$PWD/node_modules/.bin/vitest" run tests/unit/release-manager.test.js tests/unit/release-health-contract.test.js`.
+Observed terminal result: process exit `0`; the focused suite reported `2` files passed and `11` tests passed (`10` release-manager, `1` health-contract).
+Judgment: the fresh application build completed before the release-specific unit checks, and both claimed test files are green.
+
+Criterion: port-manager resolver/health contract and rollback documentation.
+Command: `pnpm exec tsx --test tests/backend/port-manager/registry.test.ts`, then scoped `git diff --check` and an `rg` assertion for the install/rollback/health wording.
+Observed terminal result: `8` registry subtests passed; output confirmed the exact-new-install, compatible-rollback, and exact-resolved-health documentation wording; scoped diff check was clean.
+Judgment: the resolver rejects unsafe inputs while accepting a compatible rollback manifest, and operator documentation matches the implementation.
+
+Criterion: packed archive header preflight and real immutable lifecycle.
+Fresh pack command: `npm run cli:pack` after the fresh build. It ran the CLI package's nested application build and pack. The combined terminal transcript exceeded the host output cap, so postcondition checking confirmed it cleaned the generated archive.
+Captured repeat command: `(cd cli && npm pack --pack-destination .. --silent)`, followed by `listArchiveEntries(...)` from `cli/scripts/release-install.js` and `node .omo/evidence/release-health-manual-scenario.mjs <archive>`.
+Observed terminal result:
+- `STOP_HOOK_CAPTURE_ARCHIVE_BYTES=18642553`
+- `STOP_HOOK_CAPTURE_TAR_ENTRY_COUNT=5815`
+- `STOP_HOOK_CAPTURE_PREFLIGHT_OK entries=5815`
+- `Immutable release already exists: 0.5.40-9trip.1`
+- `manual lifecycle passed: install, overwrite rejection, activate, rollback, SQLite/WAL/SHM restore`
+- `STOP_HOOK_CAPTURE_ARCHIVE_CLEANUP_OK`
+Judgment: the actual CLI package tarball passes raw gzip-tar validation, installs to the immutable release layout, rejects overwrite, activates, rolls back, restores SQLite/WAL/SHM, and leaves no generated archive.
+
+Recovery recorded: an attempted compact command, `npm --prefix cli pack --pack-destination .. --silent`, selected the root package and created `/Users/alextran119/Code/9router-app-0.5.40-9trip.1.tgz`; the expected CLI-archive assertion stopped it before preflight or lifecycle. The generated wrong-package archive was removed, and the verified command above executed from the actual `cli/` package root. This was an evidence-command mistake, not a product failure.
+
+Criterion: final source whitespace and generated-artifact cleanup.
+Commands: scoped tracked `git diff --check`; untracked release scripts/tests checked with `git diff --no-index --check /dev/null`; `test ! -e 9router-0.5.40-9trip.1.tgz`; `test ! -e /Users/alextran119/Code/9router-app-0.5.40-9trip.1.tgz`; and the platform scoped `git diff --check`.
+Observed terminal result: every scoped check passed; all six untracked checks produced no whitespace output; both generated archive absence checks passed.
+Final judgment: the original release-gate completion claim is now directly reverified with fresh executable evidence.

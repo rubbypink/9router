@@ -1,0 +1,36 @@
+# CLI package artifact inspection
+archive=/Users/alextran119/Code/9router-0.5.40.tgz
+archive_size_bytes=18638116
+extract_command=tar -xzf /Users/alextran119/Code/9router-0.5.40.tgz -C <temporary-inspection-directory>
+search_command=rg -uuu -F <marker> <temporary-inspection-directory>/package
+marker=threadRouteCoordinator occurrences=0 files=0
+marker=threadRouteBindings occurrences=33 files=12
+  file=app/.next-cli-build/server/chunks/6402.js
+  file=app/.next-cli-build/server/chunks/3788.js
+  file=app/.next-cli-build/server/chunks/7347.js
+  file=app/.next-cli-build/server/chunks/3048.js
+  file=app/.next-cli-build/server/chunks/2897.js
+  file=app/.next-cli-build/server/chunks/9526.js
+  file=app/.next-cli-build/server/chunks/6534.js
+  file=app/.next-cli-build/server/chunks/5535.js
+  file=app/.next-cli-build/server/chunks/9611.js
+  file=app/.next-cli-build/server/chunks/8256.js
+  file=app/.next-cli-build/server/chunks/1905.js
+  file=app/.next-cli-build/server/app/api/health/route.js
+marker=unsupported_responses_feature occurrences=1 files=1
+  file=app/.next-cli-build/server/chunks/2078.js
+
+# Coordinator marker follow-up
+note=The exact identifier threadRouteCoordinator is absent after production minification; semantic coordinator markers are counted below.
+marker=ThreadRouteCoordinator occurrences=0 files=0
+marker=threadRouting occurrences=1 files=1
+  file=app/.next-cli-build/server/app/api/health/route.js
+marker=thread_route_rebind_not_allowed occurrences=2 files=2
+  file=app/.next-cli-build/server/chunks/777.js
+  file=app/.next-cli-build/server/app/api/health/route.js
+marker=thread_route_success_mismatch occurrences=2 files=2
+  file=app/.next-cli-build/server/chunks/777.js
+  file=app/.next-cli-build/server/app/api/health/route.js
+marker=thread_queue_full occurrences=2 files=2
+  file=app/.next-cli-build/server/chunks/777.js
+  file=app/.next-cli-build/server/app/api/health/route.js

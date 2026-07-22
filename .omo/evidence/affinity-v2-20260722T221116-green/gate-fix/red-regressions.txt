@@ -1,0 +1,81 @@
+
+ RUN  v3.2.4 /Users/alextran119/Code/9router
+
+ ❯ tests/unit/session-affinity-v2.test.js (18 tests | 1 failed) 7ms
+   ✓ session affinity v2 identity > defaults enabled when no affinity environment value is supplied 0ms
+   ✓ session affinity v2 identity > lets SESSION_AFFINITY_ENABLED override the legacy flag 0ms
+   ✓ session affinity v2 identity > retains CODEX_THREAD_AFFINITY when the v2 flag is absent 0ms
+   ✓ session affinity v2 identity > namespaces Codex v2 identities while retaining the legacy lookup key 1ms
+   ✓ session affinity v2 identity > uses a distinct namespace for OpenCode session affinity 0ms
+   ✓ session affinity v2 identity > rejects conflicting Codex aliases 0ms
+   ✓ session affinity v2 identity > requires matching OpenCode affinity and session headers 0ms
+   ✓ session affinity v2 identity > accepts matching OpenCode affinity and session headers 0ms
+   ✓ session affinity v2 identity > canonicalizes standalone OpenCode session headers to one affinity key 0ms
+   ✓ session affinity v2 identity > rejects conflicting aliases in the generic legacy session group 0ms
+   ✓ session affinity v2 identity > keeps a parent session diagnostic-only 0ms
+   ✓ session affinity v2 route coordinator > stores model choices by route alias while retaining a same-provider connection 0ms
+   ✓ session affinity v2 route coordinator > keeps provider connections independent inside one session 0ms
+   ✓ session affinity v2 route coordinator > increments route epoch and records a controlled rebind reason 0ms
+   ✓ session affinity v2 route coordinator > does not rebind a route without an eligible reason 0ms
+   ✓ session affinity v2 route coordinator > lazily migrates a legacy route without changing its bound account 0ms
+   ✓ session affinity v2 route coordinator > performs lazy TTL cleanup before reading a session 0ms
+   × session affinity v2 route coordinator > expires cached bindings after the next scheduled cleanup window 3ms
+     → expected { routeAlias: 'fast', …(9) } to be null
+ ❯ tests/unit/session-affinity-chat.test.js (1 test | 1 failed) 6ms
+   × session affinity chat fallback > returns a bound model-not-found response without reselecting an affinity route 6ms
+     → expected '{"message":"Model not found"}' to be 'provider model not found' // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/session-affinity-chat.test.js > session affinity chat fallback > returns a bound model-not-found response without reselecting an affinity route
+AssertionError: expected '{"message":"Model not found"}' to be 'provider model not found' // Object.is equality
+
+Expected: "provider model not found"
+Received: "{"message":"Model not found"}"
+
+ ❯ tests/unit/session-affinity-chat.test.js:133:5
+    131| 
+    132|     expect(response.status).toBe(404);
+    133|     await expect(response.text()).resolves.toBe("provider model not fo…
+       |     ^
+    134|     expect(mocks.getProviderCredentials).toHaveBeenCalledTimes(1);
+    135|     expect(mocks.getProviderCredentials).toHaveBeenLastCalledWith(
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/unit/session-affinity-v2.test.js > session affinity v2 route coordinator > expires cached bindings after the next scheduled cleanup window
+AssertionError: expected { routeAlias: 'fast', …(9) } to be null
+
+- Expected: 
+null
+
++ Received: 
+{
+  "assignedAt": 1000,
+  "connectionId": "account-a",
+  "lastRoutedAt": 1000,
+  "lastSuccessAt": null,
+  "model": "codex/gpt-5",
+  "providerId": "codex",
+  "rebindReason": null,
+  "resolvedModel": "codex/gpt-5",
+  "routeAlias": "fast",
+  "routeEpoch": 1,
+}
+
+ ❯ tests/unit/session-affinity-v2.test.js:301:56
+    299| 
+    300|     now = 1_101;
+    301|     expect(coordinator.getBinding(sessionKey, "fast")).toBeNull();
+       |                                                        ^
+    302|     expect(coordinator.getRouteModelBinding(sessionKey, "fast")).toBeN…
+    303|     expect(coordinator.getConnectionBinding(sessionKey, "codex")).toBe…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  2 failed | 17 passed (19)
+   Start at  22:38:41
+   Duration  373ms (transform 35ms, setup 0ms, collect 48ms, tests 13ms, environment 0ms, prepare 51ms)
+

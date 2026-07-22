@@ -1,0 +1,69 @@
+
+ RUN  v3.2.4 /Users/alextran119/Code/9router
+
+ ❯ tests/unit/combo-routing.test.js (13 tests | 1 failed) 9ms
+   ✓ combo round-robin routing > keeps existing one-request round-robin behavior by default 1ms
+   ✓ combo round-robin routing > sticks to each combo model for the configured number of requests 0ms
+   ✓ combo round-robin routing > tracks sticky rotation independently per combo 0ms
+   ✓ combo round-robin routing > does not rotate fallback combos 0ms
+   ✓ combo round-robin routing > uses a thread-pinned model before round-robin state 1ms
+   ✓ combo round-robin routing > falls away from a pinned model only for an eligible provider failure 1ms
+   × combo round-robin routing > returns the pinned 404 when an eligible fallback callback vetoes rotation 3ms
+     → expected 200 to be 404 // Object.is equality
+   ✓ combo round-robin routing > keeps legacy eligible 404 fallback when no veto callback is supplied 1ms
+   ✓ combo round-robin routing > does not try another combo model for a deterministic 400 0ms
+   ✓ combo round-robin routing > does not switch models after an unclassified handler exception 0ms
+   ✓ combo round-robin routing > stops combo fallback when the logical request attempt budget is exhausted 0ms
+   ✓ combo round-robin routing > routes opaque Codex inter-agent content only through a native Responses model 0ms
+   ✓ combo round-robin routing > returns a typed conflict when opaque Codex content has no compatible route 0ms
+ ❯ tests/unit/session-affinity-chat.test.js (2 tests | 1 failed) 8ms
+   ✓ session affinity chat fallback > returns a bound model-not-found response without reselecting an affinity route 4ms
+   × session affinity chat fallback > does not rebind a pinned combo after its bound model returns 404 4ms
+     → expected 200 to be 404 // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/combo-routing.test.js > combo round-robin routing > returns the pinned 404 when an eligible fallback callback vetoes rotation
+AssertionError: expected 200 to be 404 // Object.is equality
+
+- Expected
++ Received
+
+- 404
++ 200
+
+ ❯ tests/unit/combo-routing.test.js:132:29
+    130|     });
+    131| 
+    132|     expect(response.status).toBe(404);
+       |                             ^
+    133|     await expect(response.text()).resolves.toBe("pinned model not foun…
+    134|     expect(calls).toEqual(["provider/model-b"]);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/unit/session-affinity-chat.test.js > session affinity chat fallback > does not rebind a pinned combo after its bound model returns 404
+AssertionError: expected 200 to be 404 // Object.is equality
+
+- Expected
++ Received
+
+- 404
++ 200
+
+ ❯ tests/unit/session-affinity-chat.test.js:206:29
+    204|     const response = await handleChat(request);
+    205| 
+    206|     expect(response.status).toBe(404);
+       |                             ^
+    207|     await expect(response.text()).resolves.toBe("pinned combo model no…
+    208|     expect(mocks.getProviderCredentials).toHaveBeenCalledTimes(1);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  2 failed | 13 passed (15)
+   Start at  22:48:54
+   Duration  490ms (transform 78ms, setup 0ms, collect 175ms, tests 16ms, environment 0ms, prepare 45ms)
+

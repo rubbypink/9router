@@ -1,0 +1,5 @@
+
+> 9router-tests@1.0.0 test
+> NODE_PATH=/tmp/node_modules /tmp/node_modules/.bin/vitest run --reporter=verbose unit/thread-routing.test.js unit/quota-policy.test.js unit/request-execution-state.test.js unit/responses-handler.test.js unit/responses-adapter-contract.test.js unit/responses-namespace-routing.test.js unit/openai-responses-terminal-event.test.js translator/bugs-codexCli-responses.test.js
+
+sh: /tmp/node_modules/.bin/vitest: No such file or directory

@@ -1,0 +1,5 @@
+Scenario: Fresh CLI archive inspection after `npm run cli:pack`.
+Command: node - /Users/alextran119/Code/9router/9router-0.5.40-9trip.1.tgz (initial assertion required `package/bin/9router`).
+Observable: `Error: missing required archive entry: package/bin/9router`.
+Result: The assertion stopped before lifecycle execution. This was an evidence-command assumption, not a release preflight failure.
+Follow-up artifact: `release-health-gate-build-pack-inspection-green.log` records the actual tar layout and successful lifecycle.

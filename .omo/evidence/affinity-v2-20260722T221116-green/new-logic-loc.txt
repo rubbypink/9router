@@ -1,0 +1,5 @@
+     234 open-sse/services/sessionRouteBindings.js
+     160 open-sse/services/threadRouteCoordinator.js
+      19 src/lib/db/sessionAffinityCleanup.js
+      19 src/lib/db/migrations/003-session-affinity-v2.js
+     432 total

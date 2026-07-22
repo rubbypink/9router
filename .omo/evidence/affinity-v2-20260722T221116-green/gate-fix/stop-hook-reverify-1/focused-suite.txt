@@ -1,0 +1,43 @@
+$ ./node_modules/.bin/vitest run --config tests/vitest.config.js tests/unit/thread-routing.test.js tests/unit/session-affinity-v2.test.js tests/unit/session-affinity-db.test.js tests/unit/session-affinity-auth.test.js tests/unit/db-sqlite-vs-lowdb.test.js tests/unit/session-affinity-chat.test.js
+
+ RUN  v3.2.4 /Users/alextran119/Code/9router
+
+ ✓ tests/unit/session-affinity-chat.test.js (1 test) 4ms
+stdout | tests/unit/session-affinity-auth.test.js > session-aware authentication selection > bypasses the cursor for an already-bound eligible account
+[22:44:03] ℹ️  [AUTH] codex | pinned to account- (unnamed)
+
+ ✓ tests/unit/session-affinity-auth.test.js (6 tests) 17ms
+ ✓ tests/unit/session-affinity-v2.test.js (18 tests) 9ms
+ ✓ tests/unit/thread-routing.test.js (11 tests) 6ms
+stderr | tests/unit/db-sqlite-vs-lowdb.test.js
+[DB] better-sqlite3 unavailable: Could not locate the bindings file. Tried:
+ → /Users/alextran119/Code/9router/node_modules/.pnpm/better-sqlite3@12.11.1/node_modules/better-sqlite3/build/better_sqlite3.node
+ → /Users/alextran119/Code/9router/node_modules/.pnpm/better-sqlite3@12.11.1/node_modules/better-sqlite3/build/Debug/better_sqlite3.node
+ → /Users/alextran119/Code/9router/node_modules/.pnpm/better-sqlite3@12.11.1/node_modules/better-sqlite3/build/Release/better_sqlite3.node
+ → /Users/alextran119/Code/9router/node_modules/.pnpm/better-sqlite3@12.11.1/node_modules/better-sqlite3/out/Debug/better_sqlite3.node
+ → /Users/alextran119/Code/9router/node_modules/.pnpm/better-sqlite3@12.11.1/node_modules/better-sqlite3/Debug/better_sqlite3.node
+ → /Users/alextran119/Code/9router/node_modules/.pnpm/better-sqlite3@12.11.1/node_modules/better-sqlite3/out/Release/better_sqlite3.node
+ → /Users/alextran119/Code/9router/node_modules/.pnpm/better-sqlite3@12.11.1/node_modules/better-sqlite3/Release/better_sqlite3.node
+ → /Users/alextran119/Code/9router/node_modules/.pnpm/better-sqlite3@12.11.1/node_modules/better-sqlite3/build/default/better_sqlite3.node
+ → /Users/alextran119/Code/9router/node_modules/.pnpm/better-sqlite3@12.11.1/node_modules/better-sqlite3/compiled/22.22.3/darwin/arm64/better_sqlite3.node
+ → /Users/alextran119/Code/9router/node_modules/.pnpm/better-sqlite3@12.11.1/node_modules/better-sqlite3/addon-build/release/install-root/better_sqlite3.node
+ → /Users/alextran119/Code/9router/node_modules/.pnpm/better-sqlite3@12.11.1/node_modules/better-sqlite3/addon-build/debug/install-root/better_sqlite3.node
+ → /Users/alextran119/Code/9router/node_modules/.pnpm/better-sqlite3@12.11.1/node_modules/better-sqlite3/addon-build/default/install-root/better_sqlite3.node
+ → /Users/alextran119/Code/9router/node_modules/.pnpm/better-sqlite3@12.11.1/node_modules/better-sqlite3/lib/binding/node-v127-darwin-arm64/better_sqlite3.node
+
+stdout | tests/unit/db-sqlite-vs-lowdb.test.js
+[DB] Driver: node:sqlite | file: /var/folders/9r/j3cd5mvj5b59j1ny81_k9cjm0000gn/T/9router-db-compare-gZn0ku/db/data.sqlite
+
+ ✓ tests/unit/session-affinity-db.test.js (9 tests) 102ms
+stdout | tests/unit/db-sqlite-vs-lowdb.test.js
+[DB][migrate] applied #1 initial
+[DB][migrate] applied #2 thread-route-bindings
+[DB][migrate] applied #3 session-affinity-v2
+
+ ✓ tests/unit/db-sqlite-vs-lowdb.test.js (20 tests) 388ms
+
+ Test Files  6 passed (6)
+      Tests  65 passed (65)
+   Start at  22:44:02
+   Duration  1.46s (transform 191ms, setup 0ms, collect 369ms, tests 526ms, environment 0ms, prepare 295ms)
+

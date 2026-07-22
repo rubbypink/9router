@@ -1,0 +1,33 @@
+command: git status --short --branch
+## codex/codex-thread-affinity-responses
+ M cli/package.json
+ M open-sse/config/threadAffinityConfig.js
+ M open-sse/services/threadRouteCoordinator.js
+ M open-sse/utils/threadIdentity.js
+ M package.json
+ M src/app/api/health/route.js
+ M src/lib/db/index.js
+ M src/lib/db/migrate.js
+ M src/lib/db/migrations/index.js
+ M src/lib/db/repos/connectionsRepo.js
+ M src/lib/db/repos/threadRoutesRepo.js
+ M src/lib/db/schema.js
+ M src/lib/localDb.js
+ M src/sse/handlers/chat.js
+ M src/sse/services/auth.js
+ M tests/unit/db-sqlite-vs-lowdb.test.js
+ M tests/unit/thread-routing.test.js
+?? .omo/
+?? cli/scripts/release-activation.js
+?? cli/scripts/release-cli.js
+?? cli/scripts/release-contract.js
+?? cli/scripts/release-install.js
+?? cli/scripts/release-manager.js
+?? open-sse/services/sessionRouteBindings.js
+?? src/lib/db/migrations/003-session-affinity-v2.js
+?? src/lib/db/sessionAffinityCleanup.js
+?? tests/unit/release-health-contract.test.js
+?? tests/unit/release-manager.test.js
+?? tests/unit/session-affinity-auth.test.js
+?? tests/unit/session-affinity-db.test.js
+?? tests/unit/session-affinity-v2.test.js

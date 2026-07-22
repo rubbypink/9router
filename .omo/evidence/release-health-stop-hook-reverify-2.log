@@ -1,0 +1,29 @@
+Stop-hook verification attempt: 2
+Scope: 9router immutable release contract and agents-platform port-manager integration. No deploy, provider call, merge, or push occurred.
+
+Build-backed archive criterion.
+Command: `npm run cli:pack` after confirming no existing `9router-0.5.40-9trip.1.tgz`.
+Observed terminal output: the CLI `pack:cli` script started its build-cli flow, synchronized version `0.5.40-9trip.1`, and ran the Next production build before packing. The terminal stream exceeded the host output cap; the resulting archive was subsequently consumed by the fresh checks below.
+
+Archive preflight and lifecycle criterion.
+Commands: `tar -tzf`, `listArchiveEntries(...)` from `cli/scripts/release-install.js`, and `node .omo/evidence/release-health-manual-scenario.mjs <archive>`.
+Observed terminal output:
+- `STOP_HOOK_2_ARCHIVE_BYTES=18642539`
+- `STOP_HOOK_2_TAR_ENTRY_COUNT=5815`
+- `STOP_HOOK_2_PREFLIGHT_OK entries=5815`
+- `Immutable release already exists: 0.5.40-9trip.1`
+- `manual lifecycle passed: install, overwrite rejection, activate, rollback, SQLite/WAL/SHM restore`
+- `STOP_HOOK_2_RELEASE_GATE_OK` after archive cleanup.
+Judgment: the fresh build-backed package passes raw gzip-tar entry validation and the executable immutable install/activate/rollback scenario, including database sidecar restoration.
+
+Release-unit criterion.
+Command: `NODE_PATH="$PWD/node_modules" "$PWD/node_modules/.bin/vitest" run tests/unit/release-manager.test.js tests/unit/release-health-contract.test.js`.
+Observed terminal output: `2` files passed and `11` tests passed (`10` release-manager, `1` release-health-contract).
+Judgment: release integrity and health-contract coverage are green.
+
+Platform resolver criterion.
+Command: `pnpm exec tsx --test tests/backend/port-manager/registry.test.ts` followed by scoped `git diff --check`.
+Observed terminal output: `8` subtests passed and `STOP_HOOK_2_PLATFORM_OK` was printed.
+Judgment: managed release validation, exact health validation, rollback compatibility, and documentation scope remain green.
+
+Final judgment: the second completion claim is directly reverified. The generated archive was removed before subsequent commit staging.

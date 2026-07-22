@@ -1,0 +1,3 @@
+focused tests: expected 63 passed
+deterministic scenario: expected 1 passed
+git diff --check: expected empty output

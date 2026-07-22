@@ -1,0 +1,6 @@
+criterion: real 9router custom archive passes the exact pre-extraction tar-header preflight
+scenario: inspect the freshly packed 9router-0.5.40-9trip.1.tgz through release-install listArchiveEntries
+command: node -e require(./cli/scripts/release-install.js).listArchiveEntries(...)
+{"archivePath":"/Users/alextran119/Code/9router/9router-0.5.40-9trip.1.tgz","entries":5815,"firstEntry":{"name":"package/app/.next-cli-build/BUILD_ID","type":"0"},"lastEntry":{"name":"package/app/.next-cli-build/static/media/material-symbols-outlined.ec1fa111.woff2","type":"0"}}
+observable: archive preflight accepted the real package before any extraction
+artifact: 9router-0.5.40-9trip.1.tgz

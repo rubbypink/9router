@@ -1,0 +1,14 @@
+$ ./node_modules/.bin/vitest run --config tests/vitest.config.js .omo/evidence/affinity-v2-20260722T221116-green/session-affinity-scenario.test.js
+
+ RUN  v3.2.4 /Users/alextran119/Code/9router
+
+stdout | .omo/evidence/affinity-v2-20260722T221116-green/session-affinity-scenario.test.js > records the durable session affinity V2 scenario
+AFFINITY_SCENARIO={"scenario":"temporary real SQLite + in-process coordinator","strictCursor":["account-a","account-b","account-a"],"repeatedRouteEpoch":1,"sameProviderConnection":"account-a","providerSplit":{"codex":"account-a","anthropic":"account-anthropic"},"restartBinding":"account-a","rebinds":["bound_connection_unavailable","retryable_provider_failure"],"protectedRebindStatus":409,"legacyMigrationConnection":"account-legacy","ttlCleanup":"removed both session binding rows"}
+
+ ✓ .omo/evidence/affinity-v2-20260722T221116-green/session-affinity-scenario.test.js (1 test) 25ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  22:41:13
+   Duration  1.37s (transform 32ms, setup 0ms, collect 38ms, tests 25ms, environment 0ms, prepare 45ms)
+

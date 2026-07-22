@@ -1,0 +1,12 @@
+# Stop-hook final actual verification
+timestamp=2026-07-22T21:43:44+0700
+scenario=rerun focused suite and declared CLI production build/package, inspect live archive, cleanup generated artifacts, then verify worktree
+focused_command=cd tests && NODE_PATH="$PWD/node_modules" ./node_modules/.bin/vitest run --reporter=verbose <8 focused files>
+focused_observable=8 passed files; 42 passed tests; exit 0
+focused_artifact=.omo/evidence/9router-freeze-stop-hook-rerun-focused-tests.log
+build_package_command=npm run cli:pack
+build_package_observable=9router@0.5.40; 5815 files; exit 0
+build_package_artifact=.omo/evidence/9router-freeze-stop-hook-rerun-cli-pack.log
+archive=/Users/alextran119/Code/9router-0.5.40.tgz
+archive_size_bytes=18638092
+inspection_command=tar -xzf <archive> -C <temporary-inspection-directory>; rg -uuu -F <marker> <temporary-inspection-directory>/package

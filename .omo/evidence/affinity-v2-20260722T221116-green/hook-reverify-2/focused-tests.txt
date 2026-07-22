@@ -1,0 +1,25 @@
+
+ RUN  v3.2.4 /Users/alextran119/Code/9router
+
+stdout | tests/unit/session-affinity-auth.test.js > session-aware authentication selection > bypasses the cursor for an already-bound eligible account
+[22:22:25] ℹ️  [AUTH] codex | pinned to account- (unnamed)
+
+ ✓ tests/unit/session-affinity-auth.test.js (6 tests) 45ms
+ ✓ tests/unit/session-affinity-v2.test.js (17 tests) 7ms
+ ✓ tests/unit/thread-routing.test.js (11 tests) 10ms
+stdout | tests/unit/db-sqlite-vs-lowdb.test.js
+[DB] Driver: node:sqlite | file: /var/folders/9r/j3cd5mvj5b59j1ny81_k9cjm0000gn/T/9router-db-compare-IDgpZS/db/data.sqlite
+
+ ✓ tests/unit/session-affinity-db.test.js (9 tests) 133ms
+stdout | tests/unit/db-sqlite-vs-lowdb.test.js
+[DB][migrate] applied #1 initial
+[DB][migrate] applied #2 thread-route-bindings
+[DB][migrate] applied #3 session-affinity-v2
+
+ ✓ tests/unit/db-sqlite-vs-lowdb.test.js (20 tests) 451ms
+
+ Test Files  5 passed (5)
+      Tests  63 passed (63)
+   Start at  22:22:24
+   Duration  1.60s (transform 285ms, setup 0ms, collect 486ms, tests 647ms, environment 1ms, prepare 344ms)
+

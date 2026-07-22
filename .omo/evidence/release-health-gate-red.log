@@ -1,0 +1,147 @@
+criterion: gate red test proves the pre-correction release manager lacks archive preflight, staged-tree link checks, compatible-prior validation, and recoverable failure boundaries
+scenario: focused release-manager tests with malformed tar headers plus injected filesystem failures
+command: NODE_PATH=<repo>/node_modules <repo>/node_modules/.bin/vitest run tests/unit/release-manager.test.js
+
+ RUN  v3.2.4 /Users/alextran119/Code/9router
+
+ ❯ tests/unit/release-manager.test.js (9 tests | 6 failed) 974ms
+   ✓ immutable custom 9router release manager > installs the exact custom archive into a safe temp release root 87ms
+   ✓ immutable custom 9router release manager > rejects a vanilla package and never overwrites an installed release 93ms
+   × immutable custom 9router release manager > preflights archive headers before extraction and rejects traversal, symlink, and hardlink entries 97ms
+     → expected [Function] to throw an error
+   × immutable custom 9router release manager > rejects links and hardlinks that exist in an extracted release tree 7ms
+     → expected [Function] to throw error matching /link|unsafe/i but got 'Release binary escapes the staged rel…'
+   ✓ immutable custom 9router release manager > atomically activates then rolls back the previous release with its SQLite snapshot 123ms
+   × immutable custom 9router release manager > rejects a bare previous release rather than recording it for rollback 138ms
+     → expected [Function] to throw an error
+   × immutable custom 9router release manager > keeps a prepared activation record recoverable when the post-switch record write fails 151ms
+     → expected [Function] to throw an error
+   × immutable custom 9router release manager > preserves the previous current release when the atomic link switch fails 140ms
+     → expected [Function] to throw an error
+   × immutable custom 9router release manager > compensates rollback failures by restoring the active pointer and database snapshot 137ms
+     → expected [Function] to throw an error
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/release-manager.test.js > immutable custom 9router release manager > preflights archive headers before extraction and rejects traversal, symlink, and hardlink entries
+AssertionError: expected [Function] to throw an error
+
+- Expected: 
+null
+
++ Received: 
+undefined
+
+ ❯ tests/unit/release-manager.test.js:184:45
+    182|       ]);
+    183| 
+    184|       expect(() => installRelease(fixture)).toThrow(/archive/i);
+       |                                             ^
+    185|       expect(existsSync(path.join(fixture.releaseRoot, "releases", CUS…
+    186|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯
+
+ FAIL  tests/unit/release-manager.test.js > immutable custom 9router release manager > rejects links and hardlinks that exist in an extracted release tree
+AssertionError: expected [Function] to throw error matching /link|unsafe/i but got 'Release binary escapes the staged rel…'
+
+- Expected: 
+/link|unsafe/i
+
++ Received: 
+"Release binary escapes the staged release"
+
+ ❯ tests/unit/release-manager.test.js:197:57
+    195|     symlinkSync(outsidePath, path.join(releasePath, "escaped-link"));
+    196| 
+    197|     expect(() => validateReleaseDirectory(releasePath)).toThrow(/link|…
+       |                                                         ^
+    198| 
+    199|     fs.rmSync(path.join(releasePath, "escaped-link"));
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯
+
+ FAIL  tests/unit/release-manager.test.js > immutable custom 9router release manager > rejects a bare previous release rather than recording it for rollback
+AssertionError: expected [Function] to throw an error
+
+- Expected: 
+null
+
++ Received: 
+undefined
+
+ ❯ tests/unit/release-manager.test.js:251:99
+    249|     installRelease(fixture);
+    250| 
+    251|     expect(() => activateRelease({ dataDir: fixture.dataDir, releaseRo…
+       |                                                                                                   ^
+    252|   });
+    253| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/6]⎯
+
+ FAIL  tests/unit/release-manager.test.js > immutable custom 9router release manager > keeps a prepared activation record recoverable when the post-switch record write fails
+AssertionError: expected [Function] to throw an error
+
+- Expected: 
+null
+
++ Received: 
+undefined
+
+ ❯ tests/unit/release-manager.test.js:276:111
+    274|     });
+    275| 
+    276|     expect(() => activateRelease({ dataDir: fixture.dataDir, fileSyste…
+       |                                                                                                               ^
+    277|     expect(realpathSync(path.join(fixture.releaseRoot, "current"))).to…
+    278|     expect(JSON.parse(readFileSync(recordPath, "utf8")).state).toBe("p…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/6]⎯
+
+ FAIL  tests/unit/release-manager.test.js > immutable custom 9router release manager > preserves the previous current release when the atomic link switch fails
+AssertionError: expected [Function] to throw an error
+
+- Expected: 
+null
+
++ Received: 
+undefined
+
+ ❯ tests/unit/release-manager.test.js:305:111
+    303|     });
+    304| 
+    305|     expect(() => activateRelease({ dataDir: fixture.dataDir, fileSyste…
+       |                                                                                                               ^
+    306|     expect(realpathSync(path.join(fixture.releaseRoot, "current"))).to…
+    307|     expect(existsSync(path.join(fixture.releaseRoot, "activation.json"…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/6]⎯
+
+ FAIL  tests/unit/release-manager.test.js > immutable custom 9router release manager > compensates rollback failures by restoring the active pointer and database snapshot
+AssertionError: expected [Function] to throw an error
+
+- Expected: 
+null
+
++ Received: 
+undefined
+
+ ❯ tests/unit/release-manager.test.js:334:111
+    332|     });
+    333| 
+    334|     expect(() => rollbackRelease({ dataDir: fixture.dataDir, fileSyste…
+       |                                                                                                               ^
+    335|     expect(realpathSync(path.join(fixture.releaseRoot, "current"))).to…
+    336|     expect(readFileSync(path.join(fixture.dataDir, "db", "data.sqlite"…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/6]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  6 failed | 3 passed (9)
+   Start at  22:47:04
+   Duration  1.25s (transform 18ms, setup 0ms, collect 14ms, tests 974ms, environment 0ms, prepare 41ms)
+
+
+exit_status: 1

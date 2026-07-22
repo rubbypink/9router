@@ -1,0 +1,3 @@
+Immutable release already exists: 0.5.40-9trip.1
+manual lifecycle passed: install, overwrite rejection, activate, rollback, SQLite/WAL/SHM restore
+cleanup: generated archive removed

@@ -1,0 +1,96 @@
+ M .gitignore
+ M README.md
+ M cli/cli.js
+ M cli/hooks/sqliteRuntime.js
+ M cli/scripts/build-cli.js
+ M docs/ARCHITECTURE.md
+ M open-sse/AGENTS.md
+ M open-sse/config/errorConfig.js
+ M open-sse/executors/antigravity.js
+ M open-sse/executors/base.js
+ M open-sse/executors/gemini-cli.js
+ M open-sse/handlers/chatCore.js
+ M open-sse/handlers/chatCore/nonStreamingHandler.js
+ M open-sse/handlers/chatCore/streamingHandler.js
+ M open-sse/handlers/embeddingsCore.js
+ M open-sse/handlers/fetch/index.js
+ M open-sse/handlers/imageGenerationCore.js
+ M open-sse/handlers/responsesHandler.js
+ M open-sse/handlers/search/chatSearch.js
+ M open-sse/handlers/search/index.js
+ M open-sse/handlers/sttCore.js
+ M open-sse/handlers/ttsCore.js
+ M open-sse/handlers/ttsProviders/_base.js
+ M open-sse/handlers/ttsProviders/elevenlabs.js
+ M open-sse/handlers/ttsProviders/gemini.js
+ M open-sse/handlers/ttsProviders/genericFormats.js
+ M open-sse/handlers/ttsProviders/index.js
+ M open-sse/handlers/ttsProviders/minimax.js
+ M open-sse/handlers/ttsProviders/openai.js
+ M open-sse/handlers/ttsProviders/openrouter.js
+ M open-sse/handlers/videoCore.js
+ M open-sse/providers/index.js
+ M open-sse/services/accountFallback.js
+ M open-sse/services/combo.js
+ D open-sse/transformer/responsesTransformer.js
+ M open-sse/translator/index.js
+ M open-sse/translator/request/openai-responses.js
+ M open-sse/translator/response/openai-responses.js
+ M open-sse/translator/schema/blocks.js
+ M open-sse/utils/error.js
+ M open-sse/utils/proxyFetch.js
+ M open-sse/utils/requestLogger.js
+ M open-sse/utils/responsesStreamHelpers.js
+ M open-sse/utils/sessionManager.js
+ M open-sse/utils/stream.js
+ M open-sse/utils/usageTracking.js
+ M src/app/api/cli-tools/codex-settings/route.js
+ M src/app/api/health/route.js
+ M src/app/api/v1beta/models/[...path]/route.js
+ M src/lib/db/index.js
+ M src/lib/db/migrations/index.js
+ M src/lib/db/schema.js
+ M src/lib/localDb.js
+ M src/shared/services/initializeApp.js
+ M src/sse/handlers/chat.js
+ M src/sse/handlers/embeddings.js
+ M src/sse/handlers/fetch.js
+ M src/sse/handlers/imageGeneration.js
+ M src/sse/handlers/search.js
+ M src/sse/handlers/stt.js
+ M src/sse/handlers/tts.js
+ M src/sse/handlers/videoGeneration.js
+ M src/sse/services/auth.js
+ M tests/translator/__snapshots__/golden-url-header.test.js.snap
+ M tests/translator/bugs-codexCli-responses.test.js
+ M tests/unit/codex-image-fetch.test.js
+ M tests/unit/combo-routing.test.js
+ M tests/unit/db-sqlite-vs-lowdb.test.js
+ M tests/unit/gemini-tts.test.js
+ M tests/unit/openai-responses-terminal-event.test.js
+ M tests/unit/session-manager.test.js
+ M tests/unit/xai-video-handler.test.js
+?? .omo/
+?? docs/QUOTA_POLICY.md
+?? open-sse/config/quotaPolicy.js
+?? open-sse/config/responsesConfig.js
+?? open-sse/config/threadAffinityConfig.js
+?? open-sse/services/requestExecutionState.js
+?? open-sse/services/threadRouteCoordinator.js
+?? open-sse/translator/concerns/toolNamespace.js
+?? open-sse/utils/threadIdentity.js
+?? src/app/api/cli-tools/codex-settings/helpers.js
+?? src/lib/db/migrations/002-thread-route-bindings.js
+?? src/lib/db/repos/threadRoutesRepo.js
+?? tests/unit/account-health-state.test.js
+?? tests/unit/cli-runtime-env.test.js
+?? tests/unit/codex-settings-redaction.test.js
+?? tests/unit/fallback-policy.test.js
+?? tests/unit/quota-policy.test.js
+?? tests/unit/request-execution-state.test.js
+?? tests/unit/request-logger-redaction.test.js
+?? tests/unit/responses-adapter-contract.test.js
+?? tests/unit/responses-handler.test.js
+?? tests/unit/responses-namespace-routing.test.js
+?? tests/unit/thread-routing.test.js
+?? tests/unit/upstream-error-hints.test.js

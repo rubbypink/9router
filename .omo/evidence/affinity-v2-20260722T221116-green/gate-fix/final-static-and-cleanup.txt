@@ -1,0 +1,11 @@
+$ node --check open-sse/services/sessionRouteBindings.js
+$ node --check open-sse/services/threadRouteCoordinator.js
+$ node --check src/sse/handlers/chat.js
+$ git diff --check
+$ git diff --no-index --check /dev/null open-sse/services/sessionRouteBindings.js
+untracked whitespace check clean: open-sse/services/sessionRouteBindings.js
+$ git diff --no-index --check /dev/null tests/unit/session-affinity-chat.test.js
+untracked whitespace check clean: tests/unit/session-affinity-chat.test.js
+$ find /tmp -maxdepth 1 -type d -name "9router-affinity-*" -print
+$ find "${TMPDIR:-/tmp}" -maxdepth 1 -type d -name "9router-affinity-*" -print
+RESULT=PASS

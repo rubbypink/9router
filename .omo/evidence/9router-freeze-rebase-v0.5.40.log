@@ -1,0 +1,19 @@
+Rebasing (1/4)Rebasing (2/4)Auto-merging open-sse/handlers/chatCore.js
+CONFLICT (content): Merge conflict in open-sse/handlers/chatCore.js
+Auto-merging open-sse/translator/request/openai-responses.js
+error: could not apply 0d3984d... feat(responses): enforce adapter and terminal semantics
+hint: Resolve all conflicts manually, mark them as resolved with
+hint: "git add/rm <conflicted_files>", then run "git rebase --continue".
+hint: You can instead skip this commit: run "git rebase --skip".
+hint: To abort and get back to the state before "git rebase", run "git rebase --abort".
+hint: Disable this message with "git config set advice.mergeConflict false"
+Could not apply 0d3984d... # feat(responses): enforce adapter and terminal semantics
+REBASE_INITIAL_EXIT=1
+REBASE_CONTINUE_AFTER_RESPONSES_EXIT=2
+[detached HEAD 7f9839d] feat(responses): enforce adapter and terminal semantics
+ 16 files changed, 707 insertions(+), 557 deletions(-)
+ create mode 100644 open-sse/config/responsesConfig.js
+ delete mode 100644 open-sse/transformer/responsesTransformer.js
+ create mode 100644 open-sse/translator/concerns/toolNamespace.js
+Rebasing (3/4)Rebasing (4/4)Successfully rebased and updated refs/heads/codex/codex-thread-affinity-responses.
+REBASE_CONTINUE_AFTER_RESPONSES_EXIT=0

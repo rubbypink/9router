@@ -1,0 +1,15 @@
+criterion: existing session-affinity unit contract is stable before release-gate changes
+scenario: current shared-worktree session-affinity v2 unit test runs through the already-installed repository Vitest binary
+command: NODE_PATH=<repo>/node_modules <repo>/node_modules/.bin/vitest run --root <repo>/tests unit/session-affinity-v2.test.js
+--- output ---
+
+ RUN  v3.2.4 /Users/alextran119/Code/9router/tests
+
+ ✓ unit/session-affinity-v2.test.js (16 tests) 14ms
+
+ Test Files  1 passed (1)
+      Tests  16 passed (16)
+   Start at  22:15:07
+   Duration  881ms (transform 132ms, setup 0ms, collect 260ms, tests 14ms, environment 0ms, prepare 89ms)
+
+observable: baseline affinity unit test passed before release-health work

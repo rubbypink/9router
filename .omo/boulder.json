@@ -1,0 +1,16 @@
+{
+  "schema_version": 2,
+  "active_work_id": "9router-session-affinity-release",
+  "works": {
+    "9router-session-affinity-release": {
+      "work_id": "9router-session-affinity-release",
+      "active_plan": ".omo/plans/9router-session-affinity-release.md",
+      "plan_name": "9router-session-affinity-release",
+      "session_ids": [
+        "codex:019f8a0c-f221-7662-a2fc-f8ce488cf7d9"
+      ],
+      "status": "active",
+      "worktree_path": "/Users/alextran119/Code/9router"
+    }
+  }
+}

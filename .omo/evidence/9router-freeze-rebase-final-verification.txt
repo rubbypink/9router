@@ -1,0 +1,23 @@
+# Final freeze/rebase verification
+branch=codex/codex-thread-affinity-responses
+expected_base=79918c7830695bbca4a45c9fea4a42c3e9fd73d1
+actual_merge_base=79918c7830695bbca4a45c9fea4a42c3e9fd73d1
+root_package_version=0.5.40
+cli_package_version=0.5.40
+custom_commit_count=4
+custom_history:
+  3f3eedc3f6196d512ac789004a5dcc9eb08fd262 feat(routing): persist Codex thread route affinity
+  7f9839db62964f8a874f9b936b344634cf1ca673 feat(responses): enforce adapter and terminal semantics
+  ca9e852b5540855bb89695483011e55c0493854c feat(runtime): harden health and provider operations
+  53a33a3dff4f1c6933017bb15cc86f50ed7e2eee test: cover Codex routing and Responses contracts
+base_release:
+tag v0.5.40
+Tagger: decolua <decoluadt@gmail.com>
+
+Release v0.5.40
+  79918c7830695bbca4a45c9fea4a42c3e9fd73d1 tag: v0.5.40, upstream/master, upstream/HEAD # v0.5.40 (2026-07-20)
+worktree_status:
+?? .omo/
+diff_check_base_to_head:
+diff_check_worktree:
+FINAL_VERIFICATION_EXIT=0

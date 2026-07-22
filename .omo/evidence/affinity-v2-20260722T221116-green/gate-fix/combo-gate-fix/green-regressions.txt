@@ -1,0 +1,11 @@
+
+ RUN  v3.2.4 /Users/alextran119/Code/9router
+
+ ✓ tests/unit/combo-routing.test.js (13 tests) 5ms
+ ✓ tests/unit/session-affinity-chat.test.js (2 tests) 5ms
+
+ Test Files  2 passed (2)
+      Tests  15 passed (15)
+   Start at  22:49:19
+   Duration  460ms (transform 73ms, setup 0ms, collect 162ms, tests 10ms, environment 0ms, prepare 42ms)
+

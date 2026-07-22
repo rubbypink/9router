@@ -1,0 +1,14 @@
+Scope: 9router release contract only; concurrent session-affinity changes were not reviewed or modified.
+
+Criterion: lifecycle and archive-integrity unit coverage.
+Command: `NODE_PATH="$PWD/node_modules" "$PWD/node_modules/.bin/vitest" run tests/unit/release-manager.test.js tests/unit/release-health-contract.test.js`.
+Observable: `2` files passed and `11` tests passed (`10` release-manager plus `1` health-contract).
+
+Criterion: fresh packaged release and real archive lifecycle.
+Command and observable: See `release-health-gate-build-pack-inspection-green.log` in this directory.
+
+Criterion: scoped source whitespace and generated archive cleanup.
+Command: `git diff --check -- docs/ARCHITECTURE.md`, then `git diff --no-index --check /dev/null` for the four release scripts and two release tests, then `test ! -e 9router-0.5.40-9trip.1.tgz`.
+Observable: All scoped whitespace checks were clean; no generated archive remained.
+
+Inspection correction retained: `release-health-gate-build-pack-inspection-red.log` records the failed evidence assertion and `release-health-gate-build-pack-inspection-green.log` records its corrected replacement.

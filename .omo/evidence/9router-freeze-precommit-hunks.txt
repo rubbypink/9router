@@ -1,0 +1,378 @@
+1:diff --git a/.gitignore b/.gitignore
+5:@@ -53,0 +54 @@ docs/*
+7:diff --git a/cli/cli.js b/cli/cli.js
+11:@@ -9,0 +10,2 @@ const os = require("os");
+14:diff --git a/cli/hooks/sqliteRuntime.js b/cli/hooks/sqliteRuntime.js
+18:@@ -146 +146 @@ function buildEnvWithRuntime(baseEnv = process.env) {
+21:diff --git a/cli/scripts/build-cli.js b/cli/scripts/build-cli.js
+25:@@ -22,0 +23 @@ const EXCLUDE_PATTERNS = [
+27:@@ -156,0 +158,12 @@ copyRecursive(standaloneApp, cliAppDir);
+40:@@ -197,0 +211,7 @@ ensureModuleInBundle("sql.js");
+48:diff --git a/open-sse/AGENTS.md b/open-sse/AGENTS.md
+52:@@ -17 +17 @@ Provider-agnostic SSE engine: one OpenAI-style request → any provider (LLM cha
+55:diff --git a/open-sse/config/errorConfig.js b/open-sse/config/errorConfig.js
+59:@@ -0,0 +1,2 @@
+62:@@ -33,3 +35,3 @@ export const BACKOFF_CONFIG = {
+69:@@ -41,2 +43,4 @@ export const TRANSIENT_COOLDOWN_MS = 30 * 1000;
+76:@@ -62,2 +65,0 @@ export const ERROR_RULES = [
+79:@@ -74,0 +77 @@ export const ERROR_RULES = [
+81:@@ -75,0 +79,5 @@ export const ERROR_RULES = [
+87:diff --git a/open-sse/executors/antigravity.js b/open-sse/executors/antigravity.js
+91:@@ -372,0 +373,24 @@ export class AntigravityExecutor extends BaseExecutor {
+116:diff --git a/open-sse/executors/base.js b/open-sse/executors/base.js
+120:@@ -5,0 +6 @@ import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE } from
+122:@@ -164,0 +166 @@ export class BaseExecutor {
+124:diff --git a/open-sse/executors/gemini-cli.js b/open-sse/executors/gemini-cli.js
+128:@@ -3,0 +4 @@ import { OAUTH_ENDPOINTS, GEMINI_CLI_API_CLIENT, geminiCLIUserAgent } from "../c
+130:@@ -47,0 +49,2 @@ export class GeminiCLIExecutor extends BaseExecutor {
+133:diff --git a/open-sse/handlers/chatCore.js b/open-sse/handlers/chatCore.js
+137:@@ -11 +11 @@ import { PROVIDERS } from "../config/providers.js";
+140:@@ -32,0 +33,6 @@ import { resolveSessionId } from "../utils/sessionManager.js";
+147:@@ -68,0 +75,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
+158:@@ -293,0 +310,19 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
+178:@@ -295 +330 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
+181:@@ -318,0 +354,6 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
+188:@@ -337 +378 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
+191:@@ -351 +392 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
+194:@@ -370 +411 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
+197:diff --git a/open-sse/handlers/chatCore/nonStreamingHandler.js b/open-sse/handlers/chatCore/nonStreamingHandler.js
+201:@@ -11,0 +12,2 @@ import { decloakToolNames } from "../../utils/claudeCloaking.js";
+204:@@ -62,0 +65,60 @@ function openAICompletionToClaudeMessage(responseBody) {
+265:@@ -241 +303 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
+268:@@ -243,0 +306,3 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
+272:diff --git a/open-sse/handlers/chatCore/streamingHandler.js b/open-sse/handlers/chatCore/streamingHandler.js
+276:@@ -28,0 +29,3 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
+280:@@ -31 +34 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
+283:@@ -46,9 +49 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
+294:@@ -113 +108 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
+297:@@ -116 +111 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
+300:@@ -140,0 +136,5 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
+306:diff --git a/open-sse/handlers/embeddingsCore.js b/open-sse/handlers/embeddingsCore.js
+310:@@ -99 +99 @@ export async function handleEmbeddingsCore({
+313:@@ -102 +102 @@ export async function handleEmbeddingsCore({
+316:diff --git a/open-sse/handlers/fetch/index.js b/open-sse/handlers/fetch/index.js
+320:@@ -3,0 +4,2 @@
+323:@@ -137 +138,0 @@ async function runFirecrawl({ url, fmt, timeoutMs, apiKey, maxCharacters, costPe
+325:@@ -139 +140,2 @@ async function runFirecrawl({ url, fmt, timeoutMs, apiKey, maxCharacters, costPe
+329:@@ -140,0 +143 @@ async function runFirecrawl({ url, fmt, timeoutMs, apiKey, maxCharacters, costPe
+331:@@ -165 +167,0 @@ async function runJina({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuer
+333:@@ -167 +169,2 @@ async function runJina({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuer
+337:@@ -168,0 +172 @@ async function runJina({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuer
+339:@@ -194 +197,0 @@ async function runTavily({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQu
+341:@@ -196 +199,2 @@ async function runTavily({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQu
+345:@@ -197,0 +202 @@ async function runTavily({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQu
+347:@@ -224 +228,0 @@ async function runExa({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuery
+349:@@ -226 +230,2 @@ async function runExa({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuery
+353:@@ -227,0 +233 @@ async function runExa({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuery
+355:diff --git a/open-sse/handlers/imageGenerationCore.js b/open-sse/handlers/imageGenerationCore.js
+359:@@ -158 +158 @@ export async function handleImageGenerationCore({
+362:@@ -161 +161 @@ export async function handleImageGenerationCore({
+365:diff --git a/open-sse/handlers/responsesHandler.js b/open-sse/handlers/responsesHandler.js
+369:@@ -7,2 +6,0 @@ import { handleChatCore } from "./chatCore.js";
+372:@@ -10 +7,0 @@ import { convertResponsesStreamToJson } from "../transformer/streamToJsonConvert
+374:@@ -26,9 +23,2 @@ export async function handleResponsesCore({ body, modelInfo, credentials, log, o
+386:@@ -38 +28 @@ export async function handleResponsesCore({ body, modelInfo, credentials, log, o
+389:@@ -82,15 +71,0 @@ export async function handleResponsesCore({ body, modelInfo, credentials, log, o
+405:@@ -99 +73,0 @@ export async function handleResponsesCore({ body, modelInfo, credentials, log, o
+407:diff --git a/open-sse/handlers/search/chatSearch.js b/open-sse/handlers/search/chatSearch.js
+411:@@ -5,0 +6 @@ import { PROVIDER_MEDIA } from "../../providers/index.js";
+413:@@ -404,0 +406 @@ export async function handleChatSearch({
+415:@@ -417,0 +420 @@ export async function handleChatSearch({
+417:@@ -427 +430,3 @@ export async function handleChatSearch({
+422:diff --git a/open-sse/handlers/search/index.js b/open-sse/handlers/search/index.js
+426:@@ -12,0 +13 @@ import { handleChatSearch } from "./chatSearch.js";
+428:@@ -46 +47 @@ function jsonResponse(payload, status = 200) {
+431:@@ -50,0 +52,2 @@ function errorResult(status, error) {
+434:@@ -106,3 +109,9 @@ async function tryDedicatedProvider({ provider, providerConfig, body, credential
+447:@@ -200 +209 @@ export async function handleSearchCore({ body, provider, providerConfig, credent
+450:diff --git a/open-sse/handlers/sttCore.js b/open-sse/handlers/sttCore.js
+454:@@ -2 +2 @@ import { Buffer } from "node:buffer";
+457:@@ -27,6 +27,3 @@ function resolveAudioContentType(file) {
+467:@@ -36 +33 @@ async function upstreamError(res) {
+470:@@ -51 +48 @@ async function transcribeDeepgram(cfg, file, model, token, formData) {
+473:@@ -58 +55 @@ async function transcribeDeepgram(cfg, file, model, token, formData) {
+476:@@ -64 +61 @@ async function transcribeAssemblyAI(cfg, file, model, token) {
+479:@@ -72 +69 @@ async function transcribeAssemblyAI(cfg, file, model, token) {
+482:@@ -88 +85 @@ async function transcribeAssemblyAI(cfg, file, model, token) {
+485:@@ -93 +90 @@ async function transcribeNvidia(cfg, file, model, token) {
+488:@@ -99 +96 @@ async function transcribeNvidia(cfg, file, model, token) {
+491:@@ -118 +115 @@ async function transcribeGemini(cfg, file, model, token, formData) {
+494:@@ -125 +122 @@ async function transcribeGemini(cfg, file, model, token, formData) {
+497:@@ -134 +131 @@ async function transcribeHuggingFace(cfg, file, model, token) {
+500:@@ -140 +137 @@ async function transcribeHuggingFace(cfg, file, model, token) {
+503:@@ -149 +146 @@ async function transcribeOpenAICompatible(cfg, file, model, token, formData) {
+506:@@ -183,6 +180,6 @@ export async function handleSttCore({ provider, model, formData, credentials, st
+519:diff --git a/open-sse/handlers/ttsCore.js b/open-sse/handlers/ttsCore.js
+523:@@ -72 +72,6 @@ export async function handleTtsCore({ provider, model, input, credentials, respo
+531:diff --git a/open-sse/handlers/ttsProviders/_base.js b/open-sse/handlers/ttsProviders/_base.js
+535:@@ -2,0 +3 @@ import { Buffer } from "node:buffer";
+537:@@ -18,8 +19,7 @@ export async function responseToBase64(res, defaultFormat = "mp3") {
+553:diff --git a/open-sse/handlers/ttsProviders/elevenlabs.js b/open-sse/handlers/ttsProviders/elevenlabs.js
+557:@@ -2,0 +3 @@ import { Buffer } from "node:buffer";
+559:@@ -40,4 +41 @@ export default {
+565:diff --git a/open-sse/handlers/ttsProviders/gemini.js b/open-sse/handlers/ttsProviders/gemini.js
+569:@@ -3,0 +4 @@ import { PROVIDER_MEDIA, PROVIDER_MODELS } from "../../providers/index.js";
+571:@@ -77,4 +78 @@ export default {
+577:diff --git a/open-sse/handlers/ttsProviders/genericFormats.js b/open-sse/handlers/ttsProviders/genericFormats.js
+581:@@ -7 +7 @@ import minimaxTts from "./minimax.js";
+584:@@ -13 +13 @@ async function hyperbolic({ baseUrl, apiKey, text }) {
+587:@@ -19 +19 @@ async function hyperbolic({ baseUrl, apiKey, text }) {
+590:@@ -27 +27 @@ async function deepgram({ baseUrl, apiKey, text, modelId }) {
+593:@@ -32 +32 @@ async function deepgram({ baseUrl, apiKey, text, modelId }) {
+596:@@ -38 +38 @@ async function nvidia({ baseUrl, apiKey, text, modelId, voiceId }) {
+599:@@ -43 +43 @@ async function nvidia({ baseUrl, apiKey, text, modelId, voiceId }) {
+602:@@ -50 +50 @@ async function huggingface({ baseUrl, apiKey, text, modelId }) {
+605:@@ -55 +55 @@ async function huggingface({ baseUrl, apiKey, text, modelId }) {
+608:@@ -66 +66 @@ async function inworld({ baseUrl, apiKey, text, modelId, voiceId }) {
+611:@@ -73 +73 @@ async function inworld({ baseUrl, apiKey, text, modelId, voiceId }) {
+614:@@ -88 +88 @@ async function cartesia({ baseUrl, apiKey, text, modelId, voiceId }) {
+617:@@ -93 +93 @@ async function cartesia({ baseUrl, apiKey, text, modelId, voiceId }) {
+620:@@ -111 +111 @@ async function playht({ baseUrl, apiKey, text, modelId, voiceId }) {
+623:@@ -116 +116 @@ async function playht({ baseUrl, apiKey, text, modelId, voiceId }) {
+626:@@ -122 +122 @@ async function coqui({ baseUrl, text, voiceId }) {
+629:@@ -127 +127 @@ async function coqui({ baseUrl, text, voiceId }) {
+632:@@ -133 +133 @@ async function tortoise({ baseUrl, text, voiceId }) {
+635:@@ -138 +138 @@ async function tortoise({ baseUrl, text, voiceId }) {
+638:@@ -152 +152 @@ async function openaiCompat({ baseUrl, apiKey, text, modelId, voiceId }) {
+641:diff --git a/open-sse/handlers/ttsProviders/index.js b/open-sse/handlers/ttsProviders/index.js
+645:@@ -40 +40 @@ export async function synthesizeViaConfig(provider, text, model, credentials) {
+648:diff --git a/open-sse/handlers/ttsProviders/minimax.js b/open-sse/handlers/ttsProviders/minimax.js
+652:@@ -1,0 +2 @@ import { Buffer } from "node:buffer";
+654:@@ -13 +14 @@ function hexToBase64(audioHex) {
+657:@@ -49 +50,2 @@ export default async function minimaxTts({ baseUrl, apiKey, text, modelId, voice
+661:diff --git a/open-sse/handlers/ttsProviders/openai.js b/open-sse/handlers/ttsProviders/openai.js
+665:@@ -3,0 +4 @@ import { PROVIDER_MEDIA } from "../../providers/index.js";
+667:@@ -26,4 +27 @@ export default {
+673:diff --git a/open-sse/handlers/ttsProviders/openrouter.js b/open-sse/handlers/ttsProviders/openrouter.js
+677:@@ -2,0 +3 @@ import { PROVIDER_MEDIA } from "../../providers/index.js";
+679:@@ -43,4 +44 @@ export default {
+685:diff --git a/open-sse/handlers/videoCore.js b/open-sse/handlers/videoCore.js
+689:@@ -1 +1 @@
+692:@@ -148,2 +147,0 @@ export async function handleVideoProxyCore({
+695:@@ -151,2 +149,3 @@ export async function handleVideoProxyCore({
+701:@@ -154,0 +154,2 @@ export async function handleVideoProxyCore({
+704:diff --git a/open-sse/providers/index.js b/open-sse/providers/index.js
+708:@@ -5,0 +6 @@ import { buildTtsProviderModels } from "../config/ttsModels.js";
+710:@@ -33,0 +35 @@ export const PROVIDER_MEDIA = {};
+712:diff --git a/open-sse/services/accountFallback.js b/open-sse/services/accountFallback.js
+716:@@ -1 +1 @@
+719:@@ -5 +5 @@ import { ERROR_RULES, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS } from "../config/er
+722:@@ -26,0 +27,4 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
+727:@@ -48,2 +52 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
+731:diff --git a/open-sse/services/combo.js b/open-sse/services/combo.js
+735:@@ -8,0 +9 @@ import { extractTextContent } from "../translator/formats/gemini.js";
+737:@@ -17,0 +19,16 @@ const TOOL_RESULT_PREFIX = "[Tool result: ";
+754:@@ -229,3 +246,26 @@ export function getComboModelsFromData(modelStr, combosData) {
+784:@@ -234 +274 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
+787:@@ -264,0 +305 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
+789:@@ -267,0 +309 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
+791:@@ -282,0 +325,5 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
+797:@@ -290,0 +338,2 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
+800:@@ -305 +353,0 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
+802:@@ -307,2 +355,5 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
+810:diff --git a/open-sse/transformer/responsesTransformer.js b/open-sse/transformer/responsesTransformer.js
+815:@@ -1,439 +0,0 @@
+1255:diff --git a/open-sse/translator/index.js b/open-sse/translator/index.js
+1259:@@ -54,0 +55,7 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
+1267:@@ -84,0 +92 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
+1269:@@ -90,0 +99 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
+1271:@@ -143,0 +153,6 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
+1278:@@ -246,0 +262 @@ export function initState(sourceFormat) {
+1280:@@ -257,0 +274,3 @@ export function initState(sourceFormat) {
+1284:diff --git a/open-sse/translator/request/openai-responses.js b/open-sse/translator/request/openai-responses.js
+1288:@@ -10,0 +11,6 @@ import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM } from "../schema/index.js";
+1295:@@ -23,0 +30,2 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
+1298:@@ -84,2 +92,4 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
+1305:@@ -99,0 +110,4 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
+1310:@@ -109,2 +122,0 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
+1313:@@ -115,2 +127,2 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
+1318:@@ -169,2 +181,2 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
+1323:@@ -171,0 +184 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
+1325:@@ -188,0 +202,2 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
+1328:@@ -190,0 +206,2 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
+1331:@@ -199,0 +217,2 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
+1334:@@ -200,0 +220 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
+1336:@@ -204,0 +225,4 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
+1341:diff --git a/open-sse/translator/response/openai-responses.js b/open-sse/translator/response/openai-responses.js
+1345:@@ -10,0 +11 @@ import { reasoningDelta, extractReasoningText } from "../concerns/reasoning.js";
+1347:@@ -12,0 +14,20 @@ import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM, OPENAI_FINISH, MODEL_FALLBACK } fro
+1368:@@ -21 +42,4 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
+1374:@@ -49,0 +74,2 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
+1377:@@ -60 +86,2 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
+1381:@@ -115 +141,0 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
+1383:@@ -125 +151 @@ function startReasoning(state, emit, idx) {
+1386:@@ -129 +155 @@ function startReasoning(state, emit, idx) {
+1389:@@ -136 +162 @@ function startReasoning(state, emit, idx) {
+1392:@@ -175,0 +202,6 @@ function closeReasoning(state, emit) {
+1399:@@ -179,5 +211 @@ function closeReasoning(state, emit) {
+1406:@@ -190,0 +219 @@ function emitTextContent(state, emit, idx, content) {
+1408:@@ -195,2 +224,2 @@ function emitTextContent(state, emit, idx, content) {
+1413:@@ -206 +235 @@ function emitTextContent(state, emit, idx, content) {
+1416:@@ -215 +244 @@ function emitTextContent(state, emit, idx, content) {
+1419:@@ -229,0 +259 @@ function closeMessage(state, emit, idx) {
+1421:@@ -234 +264 @@ function closeMessage(state, emit, idx) {
+1424:@@ -243 +273 @@ function closeMessage(state, emit, idx) {
+1427:@@ -247,0 +278,8 @@ function closeMessage(state, emit, idx) {
+1436:@@ -250,7 +288,2 @@ function closeMessage(state, emit, idx) {
+1446:@@ -270 +303,2 @@ function emitToolCall(state, emit, tc) {
+1450:@@ -273 +307 @@ function emitToolCall(state, emit, tc) {
+1453:@@ -276,0 +311 @@ function emitToolCall(state, emit, tc) {
+1455:@@ -279 +314 @@ function emitToolCall(state, emit, tc) {
+1458:@@ -292 +327 @@ function emitToolCall(state, emit, tc) {
+1461:@@ -304 +339,2 @@ function closeToolCall(state, emit, idx) {
+1465:@@ -308 +344 @@ function closeToolCall(state, emit, idx) {
+1468:@@ -311,0 +348,9 @@ function closeToolCall(state, emit, idx) {
+1478:@@ -314,8 +359,2 @@ function closeToolCall(state, emit, idx) {
+1489:@@ -331,0 +371 @@ function sendCompleted(state, emit) {
+1491:@@ -337,0 +378 @@ function sendCompleted(state, emit) {
+1493:@@ -340 +381,5 @@ function sendCompleted(state, emit) {
+1500:diff --git a/open-sse/translator/schema/blocks.js b/open-sse/translator/schema/blocks.js
+1504:@@ -27,0 +28 @@ export const RESPONSES_ITEM = {
+1506:@@ -29,0 +31,2 @@ export const RESPONSES_ITEM = {
+1509:diff --git a/open-sse/utils/error.js b/open-sse/utils/error.js
+1513:@@ -1,0 +2,159 @@ import { ERROR_TYPES, DEFAULT_ERROR_MESSAGES } from "../config/errorConfig.js";
+1673:@@ -30,2 +189,5 @@ export function buildErrorBody(statusCode, message) {
+1681:@@ -56 +218 @@ export async function writeStreamError(writer, statusCode, message) {
+1684:@@ -66 +228,6 @@ export async function parseUpstreamError(response, executor = null) {
+1692:@@ -72 +239,6 @@ export async function parseUpstreamError(response, executor = null) {
+1700:@@ -74 +246 @@ export async function parseUpstreamError(response, executor = null) {
+1703:@@ -79,2 +251,7 @@ export async function parseUpstreamError(response, executor = null) {
+1713:@@ -88 +265,6 @@ export async function parseUpstreamError(response, executor = null) {
+1721:@@ -96 +278,2 @@ export async function parseUpstreamError(response, executor = null) {
+1725:@@ -98 +281 @@ export async function parseUpstreamError(response, executor = null) {
+1728:@@ -103,0 +287 @@ export function createErrorResult(statusCode, message, resetsAtMs) {
+1730:@@ -107,0 +292,20 @@ export function createErrorResult(statusCode, message, resetsAtMs) {
+1751:diff --git a/open-sse/utils/proxyFetch.js b/open-sse/utils/proxyFetch.js
+1755:@@ -3,0 +4 @@ import { dbg } from "./debugLog.js";
+1757:@@ -295,0 +297 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
+1759:diff --git a/open-sse/utils/requestLogger.js b/open-sse/utils/requestLogger.js
+1763:@@ -5,0 +6 @@ const LOGGING_ENABLED = typeof process !== "undefined" && process.env?.ENABLE_RE
+1765:@@ -72,2 +73 @@ function writeJsonFile(sessionPath, filename, data) {
+1769:@@ -75,16 +75,29 @@ function maskSensitiveHeaders(headers) {
+1815:@@ -135 +148 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
+1818:@@ -144 +157 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
+1821:@@ -152 +165 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
+1824:@@ -162 +175 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
+1827:@@ -173,2 +186,2 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
+1832:@@ -179,0 +193 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
+1834:@@ -190,0 +205 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
+1836:@@ -204 +219 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
+1839:@@ -209,0 +225 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
+1841:@@ -225 +241 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
+1844:diff --git a/open-sse/utils/responsesStreamHelpers.js b/open-sse/utils/responsesStreamHelpers.js
+1848:@@ -8,0 +9 @@ const OPENAI_RESPONSES_TERMINAL_EVENTS = new Set([
+1850:@@ -23 +24,6 @@ export function isOpenAIResponsesTerminalEvent(eventName, chunk) {
+1858:diff --git a/open-sse/utils/sessionManager.js b/open-sse/utils/sessionManager.js
+1862:@@ -95 +95 @@ const MAX_CONTINUATION_SESSIONS = 5000;
+1865:@@ -137,0 +138,4 @@ function extractClientSessionId(headers, body, scope = "") {
+1870:@@ -142 +146 @@ function extractClientSessionId(headers, body, scope = "") {
+1873:diff --git a/open-sse/utils/stream.js b/open-sse/utils/stream.js
+1877:@@ -6 +6 @@ import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./str
+1880:@@ -74,0 +75,2 @@ export function createSSEStream(options = {}) {
+1883:@@ -105,0 +108,4 @@ export function createSSEStream(options = {}) {
+1888:@@ -109,0 +116,2 @@ export function createSSEStream(options = {}) {
+1891:@@ -168,0 +177 @@ export function createSSEStream(options = {}) {
+1893:@@ -219,0 +229,5 @@ export function createSSEStream(options = {}) {
+1899:@@ -220,0 +235 @@ export function createSSEStream(options = {}) {
+1901:@@ -230,0 +246 @@ export function createSSEStream(options = {}) {
+1903:@@ -240,0 +257 @@ export function createSSEStream(options = {}) {
+1905:@@ -381 +398 @@ export function createSSEStream(options = {}) {
+1908:@@ -385,0 +403 @@ export function createSSEStream(options = {}) {
+1910:@@ -387,0 +406,10 @@ export function createSSEStream(options = {}) {
+1921:@@ -428 +455,0 @@ export function createSSEStream(options = {}) {
+1923:@@ -433,0 +461 @@ export function createSSEStream(options = {}) {
+1925:@@ -458 +486 @@ export function createSSEStream(options = {}) {
+1928:diff --git a/open-sse/utils/usageTracking.js b/open-sse/utils/usageTracking.js
+1932:@@ -86 +86 @@ export function filterUsageForFormat(usage, targetFormat) {
+1935:diff --git a/src/app/api/cli-tools/codex-settings/route.js b/src/app/api/cli-tools/codex-settings/route.js
+1939:@@ -9,0 +10 @@ import { parseTOML, stringifyTOML } from "confbox";
+1941:@@ -13 +14 @@ const execAsync = promisify(exec);
+1944:@@ -15 +15,0 @@ const getCodexConfigPath = () => path.join(getCodexDir(), "config.toml");
+1946:@@ -99 +99 @@ export async function GET() {
+1949:@@ -131,5 +130,0 @@ export async function POST(request) {
+1955:@@ -142,6 +137 @@ export async function POST(request) {
+1963:@@ -154,13 +143,0 @@ export async function POST(request) {
+1977:@@ -169 +146 @@ export async function POST(request) {
+1980:@@ -170,0 +148,2 @@ export async function POST(request) {
+1983:@@ -207,3 +185,0 @@ export async function DELETE() {
+1987:@@ -214,16 +189,0 @@ export async function DELETE() {
+2004:diff --git a/src/app/api/health/route.js b/src/app/api/health/route.js
+2008:@@ -1,0 +2,6 @@ import { NextResponse } from "next/server";
+2015:@@ -10 +16,9 @@ export async function GET() {
+2026:diff --git a/src/app/api/v1beta/models/[...path]/route.js b/src/app/api/v1beta/models/[...path]/route.js
+2030:@@ -11,0 +12,7 @@ import { initTranslators } from "open-sse/translator/index.js";
+2038:@@ -88 +95,4 @@ export async function POST(request, { params }) {
+2044:@@ -290,9 +300,9 @@ async function forwardGeminiNativeRequest(request, body, model, action) {
+2063:@@ -300,0 +311,11 @@ async function forwardGeminiNativeRequest(request, body, model, action) {
+2075:@@ -342,0 +364 @@ async function forwardGeminiNativeRequest(request, body, model, action) {
+2077:@@ -349 +371,3 @@ async function forwardGeminiNativeRequest(request, body, model, action) {
+2082:diff --git a/src/lib/db/index.js b/src/lib/db/index.js
+2086:@@ -40,0 +41,4 @@ export {
+2091:@@ -81,0 +86 @@ export async function exportDb() {
+2093:@@ -109,0 +115 @@ export async function importDb(payload) {
+2095:@@ -149,0 +156,19 @@ export async function importDb(payload) {
+2115:diff --git a/src/lib/db/migrations/index.js b/src/lib/db/migrations/index.js
+2119:@@ -4,0 +5 @@ import m001 from "./001-initial.js";
+2121:@@ -6 +7 @@ import m001 from "./001-initial.js";
+2124:diff --git a/src/lib/db/schema.js b/src/lib/db/schema.js
+2128:@@ -6 +6 @@
+2131:@@ -99,0 +100,16 @@ export const TABLES = {
+2148:diff --git a/src/lib/localDb.js b/src/lib/localDb.js
+2152:@@ -15,0 +16 @@ export {
+2154:diff --git a/src/shared/services/initializeApp.js b/src/shared/services/initializeApp.js
+2158:@@ -5,0 +6 @@ import { cleanupProviderConnections, getSettings, updateSettings, getApiKeys } f
+2160:@@ -83,0 +85,5 @@ async function runHeavyStartup() {
+2166:diff --git a/src/sse/handlers/chat.js b/src/sse/handlers/chat.js
+2170:@@ -24,0 +25,9 @@ import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+2180:@@ -89,11 +98,33 @@ export async function handleChat(request, clientRawRequest = null) {
+2225:@@ -102,8 +133 @@ export async function handleChat(request, clientRawRequest = null) {
+2235:@@ -112,2 +136,9 @@ export async function handleChat(request, clientRawRequest = null) {
+2247:@@ -117,12 +148,5 @@ export async function handleChat(request, clientRawRequest = null) {
+2265:@@ -130,2 +154,20 @@ export async function handleChat(request, clientRawRequest = null) {
+2288:@@ -137 +179 @@ export async function handleChat(request, clientRawRequest = null) {
+2291:@@ -150,0 +193,3 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
+2295:@@ -161 +206 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
+2298:@@ -175 +220 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
+2301:@@ -179 +224,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
+2311:@@ -196,0 +249,4 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
+2316:@@ -199 +255,4 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
+2322:@@ -216,0 +276,22 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
+2345:@@ -267,0 +349,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
+2353:@@ -272 +360 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
+2356:@@ -275 +363,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
+2367:@@ -277,0 +374 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
+2369:diff --git a/src/sse/handlers/embeddings.js b/src/sse/handlers/embeddings.js
+2373:@@ -129 +129,9 @@ export async function handleEmbeddings(request) {
+2384:diff --git a/src/sse/handlers/fetch.js b/src/sse/handlers/fetch.js
+2388:@@ -210 +210,9 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
+2399:diff --git a/src/sse/handlers/imageGeneration.js b/src/sse/handlers/imageGeneration.js
+2403:@@ -131 +131,9 @@ async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutpu
+2414:diff --git a/src/sse/handlers/search.js b/src/sse/handlers/search.js
+2418:@@ -194 +194,9 @@ async function handleSingleProviderSearch(body, providerInput, request, apiKey,
+2429:diff --git a/src/sse/handlers/stt.js b/src/sse/handlers/stt.js
+2433:@@ -79 +79,9 @@ export async function handleStt(request) {
+2444:diff --git a/src/sse/handlers/tts.js b/src/sse/handlers/tts.js
+2448:@@ -105 +105,9 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language) {
+2459:diff --git a/src/sse/handlers/videoGeneration.js b/src/sse/handlers/videoGeneration.js
+2463:@@ -163 +163,7 @@ export async function handleVideoCreate(request, action) {
+2472:@@ -220 +226,7 @@ export async function handleVideoGet(request, requestId) {
+2481:diff --git a/src/sse/services/auth.js b/src/sse/services/auth.js
+2485:@@ -3,2 +3,3 @@ import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/con
+2491:@@ -10,0 +12,136 @@ let selectionMutex = Promise.resolve();
+2628:@@ -62 +199,5 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
+2635:@@ -189 +329,0 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
+2637:@@ -192 +332 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
+2640:@@ -210 +350 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
+2643:@@ -214,0 +355,4 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
+2648:@@ -216 +359,0 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
+2650:@@ -218 +361 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
+2653:@@ -220 +363 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
+2656:@@ -223,0 +367,4 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
+2661:@@ -228 +375,16 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
+2679:@@ -234 +396 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
+2682:@@ -236 +398,2 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
+2686:@@ -239 +401,0 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
+2688:@@ -261,0 +424 @@ export async function clearAccountError(connectionId, currentConnection, model =
+2690:@@ -265,3 +427,0 @@ export async function clearAccountError(connectionId, currentConnection, model =
+2694:@@ -269,13 +429,3 @@ export async function clearAccountError(connectionId, currentConnection, model =
+2711:@@ -283,8 +433,2 @@ export async function clearAccountError(connectionId, currentConnection, model =

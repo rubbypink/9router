@@ -1,0 +1,68 @@
+
+ RUN  v4.1.10 /Users/alextran119/Code/9router/tests
+
+ ✓ unit/request-execution-state.test.js > upstream request execution state > spaces starts to the same endpoint by at least two seconds 2ms
+ ✓ unit/request-execution-state.test.js > upstream request execution state > stops a logical request before a fifth provider attempt 1ms
+ ✓ unit/request-execution-state.test.js > upstream request execution state > does not charge provider attempt budget for a media prefetch origin 0ms
+ ✓ unit/request-execution-state.test.js > upstream request execution state > does not serialize different endpoints 0ms
+ ✓ unit/responses-handler.test.js > Responses handler > passes the original Responses schema to the canonical translator 25ms
+ ✓ unit/responses-handler.test.js > Responses handler > does not translate an already canonical Responses stream a second time 1ms
+ ✓ unit/thread-routing.test.js > Codex thread identity > keeps thread affinity enabled even when a legacy environment value says false 1ms
+ ✓ unit/thread-routing.test.js > Codex thread identity > prioritizes thread-id and never merges sibling agents through session-id 1ms
+ ✓ unit/thread-routing.test.js > Codex thread identity > rejects conflicting explicit Codex thread identifiers 0ms
+ ✓ unit/thread-routing.test.js > Codex thread identity > does not treat a per-request identifier as a thread identity 0ms
+ ✓ unit/thread-routing.test.js > Codex thread identity > preserves the thread identity error code in an OpenAI error response 21ms
+ ✓ unit/thread-routing.test.js > Codex thread identity > falls back through Codex metadata before generic session headers 0ms
+ ✓ unit/thread-routing.test.js > ThreadRouteCoordinator > pins one route and changes it only after an explicitly eligible failure 1ms
+ ✓ unit/thread-routing.test.js > ThreadRouteCoordinator > rejects an explicit model change inside an already-bound thread 0ms
+ ✓ unit/thread-routing.test.js > ThreadRouteCoordinator > restores a persisted route after the coordinator process state is recreated 0ms
+ ✓ unit/thread-routing.test.js > ThreadRouteCoordinator > holds the same-thread lane until the response stream is consumed 2ms
+ ✓ unit/thread-routing.test.js > ThreadRouteCoordinator > allows different Codex threads to run concurrently 1ms
+ ✓ unit/quota-policy.test.js > provider quota policy > resolves a policy for every registered provider 1ms
+ ✓ unit/quota-policy.test.js > provider quota policy > uses provider-specific reset contracts where official signals exist 1ms
+ ✓ unit/quota-policy.test.js > provider quota policy > supports dynamic compatible providers without configuration toggles 0ms
+ ✓ unit/responses-namespace-routing.test.js > Responses namespace tool routing > flattens namespace declarations and historical calls without duplicating the tool prefix 4ms
+ ✓ unit/responses-namespace-routing.test.js > Responses namespace tool routing > restores namespace and inner name on streamed function calls 2ms
+ ✓ unit/responses-namespace-routing.test.js > Responses namespace tool routing > keeps namespace tools reversible when a plain function already uses the readable wire name 1ms
+ ✓ unit/responses-namespace-routing.test.js > Responses namespace tool routing > uses globally unique output indexes and completes with accumulated output and usage 1ms
+ ✓ translator/bugs-codexCli-responses.test.js > Codex CLI Responses → OpenAI > does not emit an assistant message with empty tool_calls when all names are empty 4ms
+ ✓ translator/bugs-codexCli-responses.test.js > Codex CLI Responses → OpenAI > serializes function_call arguments as a string 1ms
+ ✓ translator/bugs-codexCli-responses.test.js > Codex CLI Responses → OpenAI > does not use input_image file_id as a raw url 0ms
+ ✓ translator/bugs-codexCli-responses.test.js > OpenAI → Codex Responses (reverse) > maps developer messages to Responses API instructions 1ms
+ ✓ translator/bugs-codexCli-responses.test.js > OpenAI → Codex Responses (reverse) > call_id longer than 64 chars is clamped 0ms
+ ✓ unit/responses-adapter-contract.test.js > Responses chat-adapter contract > rejects stateful and non-degradable hosted features instead of silently dropping them 1ms
+ ✓ unit/responses-adapter-contract.test.js > Responses chat-adapter contract > safely degrades Codex continuity output and optional hosted search on chat adapters 1ms
+ ✓ unit/responses-adapter-contract.test.js > Responses chat-adapter contract > still rejects unknown include fields and opaque encrypted message content 0ms
+ ✓ unit/responses-adapter-contract.test.js > Responses chat-adapter contract > accepts namespace-wrapped function tools on a chat adapter 0ms
+ ✓ unit/responses-adapter-contract.test.js > Responses chat-adapter contract > rejects Responses-only limits, prompt templates, and file inputs that a chat adapter cannot preserve 0ms
+ ✓ unit/responses-adapter-contract.test.js > Responses chat-adapter contract > accepts adapter-safe text, remote images, and disabled truncation 0ms
+ ✓ unit/responses-adapter-contract.test.js > Responses chat-adapter contract > returns canonical non-streaming Responses output and restores namespace identity 1ms
+ ✓ unit/responses-adapter-contract.test.js > Responses chat-adapter contract > keeps total_tokens when usage is filtered for Responses 0ms
+stdout | unit/openai-responses-terminal-event.test.js > OpenAI Responses streaming termination > emits a response.failed event when a Responses stream closes before a terminal event
+[21:26:05] 🐛 [DBG:SSE] flush | provider=codex | model=gpt-5.5 | recvLines=4 | emitted=2 | events=[response.created=1,response.output_text.delta=1]
+
+stdout | unit/openai-responses-terminal-event.test.js > OpenAI Responses streaming termination > does not add response.failed when a Responses stream already completed
+[21:26:05] 🐛 [DBG:SSE] flush | provider=codex | model=gpt-5.5 | recvLines=2 | emitted=1 | events=[response.completed=1]
+
+stdout | unit/openai-responses-terminal-event.test.js > OpenAI Responses streaming termination > does not add response.failed when a Responses stream sends response.done
+[21:26:05] 🐛 [DBG:SSE] flush | provider=codex | model=gpt-5.5 | recvLines=2 | emitted=1 | events=[response.done=1]
+
+stdout | unit/openai-responses-terminal-event.test.js > OpenAI Responses streaming termination > treats response.incomplete as a terminal failure
+[21:26:05] 🐛 [DBG:SSE] flush | provider=codex | model=gpt-5.5 | recvLines=2 | emitted=1 | events=[response.incomplete=1]
+
+stdout | unit/openai-responses-terminal-event.test.js > OpenAI Responses streaming termination > emits response.failed before DONE when a Responses stream sends DONE without a terminal event
+[21:26:05] 🐛 [DBG:SSE] flush | provider=codex | model=gpt-5.5 | recvLines=3 | emitted=2 | events=[response.created=1]
+
+ ✓ unit/openai-responses-terminal-event.test.js > OpenAI Responses streaming termination > emits a response.failed event when a Responses stream closes before a terminal event 14ms
+ ✓ unit/openai-responses-terminal-event.test.js > OpenAI Responses streaming termination > does not add response.failed when a Responses stream already completed 1ms
+ ✓ unit/openai-responses-terminal-event.test.js > OpenAI Responses streaming termination > does not add response.failed when a Responses stream sends response.done 0ms
+ ✓ unit/openai-responses-terminal-event.test.js > OpenAI Responses streaming termination > treats response.incomplete as a terminal failure 0ms
+ ✓ unit/openai-responses-terminal-event.test.js > OpenAI Responses streaming termination > emits response.failed before DONE when a Responses stream sends DONE without a terminal event 1ms
+
+ Test Files  8 passed (8)
+      Tests  42 passed (42)
+   Start at  21:26:04
+   Duration  688ms (transform 1.41s, setup 0ms, import 2.36s, tests 101ms, environment 0ms)
+
+
+BASELINE_LOCAL_TEST_EXIT=0

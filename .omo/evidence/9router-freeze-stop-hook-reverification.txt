@@ -1,0 +1,44 @@
+# Stop-hook fresh verification
+timestamp=2026-07-22T21:40:50+0700
+scenario=verify final branch base, retained commit stack, package versions, whitespace, and product worktree before rerunning focused tests
+command=git merge-base HEAD v0.5.40; git rev-list --count v0.5.40..HEAD; node package versions; git diff --check
+expected_base=79918c7830695bbca4a45c9fea4a42c3e9fd73d1
+actual_base=79918c7830695bbca4a45c9fea4a42c3e9fd73d1
+root_version=0.5.40
+cli_version=0.5.40
+custom_commit_count=4
+product_dirty_count=0
+history:
+  3f3eedc3f6196d512ac789004a5dcc9eb08fd262 feat(routing): persist Codex thread route affinity
+  7f9839db62964f8a874f9b936b344634cf1ca673 feat(responses): enforce adapter and terminal semantics
+  ca9e852b5540855bb89695483011e55c0493854c feat(runtime): harden health and provider operations
+  53a33a3dff4f1c6933017bb15cc86f50ed7e2eee test: cover Codex routing and Responses contracts
+worktree:
+?? .omo/
+git_diff_check_base_to_head:
+git_diff_check_worktree:
+judgment=PASS if base, versions, 4 commits, no product dirt, and both diff checks match expected values
+LIVE_GIT_VERIFICATION_EXIT=0
+
+scenario=verify recorded behavioral/build/package evidence and current package-artifact cleanup
+command=rg exit/count markers from prior focused-test/build/pack logs; test absence of temporary tarball/extraction directory
+focused_suite_log_markers:
+62: Test Files  8 passed (8)
+63:      Tests  42 passed (42)
+67:POST_REBASE_FOCUSED_TEST_EXIT=0
+production_build_log_marker:
+343:PRODUCTION_BUILD_EXIT=0
+cli_pack_log_marker:
+6229:CLI_PACK_EXIT=0
+package_marker_summary:
+6:marker=threadRouteCoordinator occurrences=0 files=0
+7:marker=threadRouteBindings occurrences=33 files=12
+20:marker=unsupported_responses_feature occurrences=1 files=1
+26:marker=threadRouting occurrences=1 files=1
+28:marker=thread_route_rebind_not_allowed occurrences=2 files=2
+cleanup_log_marker:
+TEMP_PACKAGE_ARTIFACTS_CLEANED=3
+TEMP_PACKAGE_ARTIFACTS_REMAIN=0
+tarball_present=false
+judgment=PASS: focused tests, production build, CLI pack, package markers, and cleanup have recorded successful observables; current git state is verified above.
+STOP_HOOK_EVIDENCE_EXIT=0

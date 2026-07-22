@@ -1,0 +1,10 @@
+criterion: a real custom CLI archive installs immutably, rejects vanilla/overwrite input, activates atomically, and rolls back its recorded SQLite state
+scenario: direct release CLI against temporary absolute release/data roots; no global binary, provider, or deployment process is launched
+command: RELEASE_ARCHIVE=<repo>/9router-0.5.40-9trip.1.tgz node <temporary release scenario>
+--- output ---
+real custom archive: installed into an immutable temporary release root
+vanilla and overwrite install attempts: rejected
+activation: atomically switched current and restart-safe release manifest revalidated
+rollback: restored previous release plus SQLite, WAL, and SHM snapshot
+cleanup: temporary release state and generated package archives removed
+observable: real package lifecycle assertions passed and all temporary/package artifacts were removed

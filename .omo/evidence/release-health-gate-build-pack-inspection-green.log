@@ -1,0 +1,13 @@
+Scenario: Fresh production build, CLI pack, raw gzip-tar preflight, and immutable release lifecycle.
+Commands:
+- `npm run build` (fresh application build; observed `.next/BUILD_ID` = `0DrK7NELMRGpoMEzENgUs`).
+- `npm run cli:pack` (runs the CLI package's fresh `npm run build` and `npm pack --pack-destination ..`).
+- `tar -tzf 9router-0.5.40-9trip.1.tgz`, package metadata validation, and `listArchiveEntries(...)` from `cli/scripts/release-install.js`.
+- `node .omo/evidence/release-health-manual-scenario.mjs /Users/alextran119/Code/9router/9router-0.5.40-9trip.1.tgz`.
+Observables:
+- Archive bytes: `18642523`; tar entries: `5815`.
+- Packaged metadata: `name=9router`, `version=0.5.40-9trip.1`, `bin=./cli.js`.
+- Actual package entries: `package/package.json` and `package/cli.js`; `package/bin/9router` is not an npm-pack member because immutable installation creates that wrapper.
+- Hardened raw-tar preflight accepted all `5815` entries.
+- Real lifecycle passed: install, duplicate-install rejection, activate, rollback, and SQLite/WAL/SHM restoration.
+- Generated archive was removed; `test ! -e 9router-0.5.40-9trip.1.tgz` passed.

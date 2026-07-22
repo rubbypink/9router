@@ -1,0 +1,7 @@
+$ node --check open-sse/services/combo.js
+$ node --check open-sse/services/sessionRouteBindings.js
+$ node --check open-sse/services/threadRouteCoordinator.js
+$ node --check src/sse/handlers/chat.js
+$ git diff --check
+$ find /tmp -maxdepth 1 -type d -name "9router-affinity-*" -print
+RESULT=PASS

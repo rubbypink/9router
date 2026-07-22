@@ -1,0 +1,57 @@
+=== focused-regression ===
+
+ RUN  v3.2.4 /Users/alextran119/Code/9router
+
+stdout | tests/unit/session-affinity-auth.test.js > session-aware authentication selection > bypasses the cursor for an already-bound eligible account
+[22:23:33] ℹ️  [AUTH] codex | pinned to account- (unnamed)
+
+ ✓ tests/unit/session-affinity-auth.test.js (6 tests) 14ms
+ ✓ tests/unit/session-affinity-v2.test.js (17 tests) 4ms
+ ✓ tests/unit/thread-routing.test.js (11 tests) 8ms
+stderr | tests/unit/db-sqlite-vs-lowdb.test.js
+[DB] better-sqlite3 unavailable: Could not locate the bindings file. Tried:
+ → /Users/alextran119/Code/9router/node_modules/.pnpm/better-sqlite3@12.11.1/node_modules/better-sqlite3/build/better_sqlite3.node
+ → /Users/alextran119/Code/9router/node_modules/.pnpm/better-sqlite3@12.11.1/node_modules/better-sqlite3/build/Debug/better_sqlite3.node
+ → /Users/alextran119/Code/9router/node_modules/.pnpm/better-sqlite3@12.11.1/node_modules/better-sqlite3/build/Release/better_sqlite3.node
+ → /Users/alextran119/Code/9router/node_modules/.pnpm/better-sqlite3@12.11.1/node_modules/better-sqlite3/out/Debug/better_sqlite3.node
+ → /Users/alextran119/Code/9router/node_modules/.pnpm/better-sqlite3@12.11.1/node_modules/better-sqlite3/Debug/better_sqlite3.node
+ → /Users/alextran119/Code/9router/node_modules/.pnpm/better-sqlite3@12.11.1/node_modules/better-sqlite3/out/Release/better_sqlite3.node
+ → /Users/alextran119/Code/9router/node_modules/.pnpm/better-sqlite3@12.11.1/node_modules/better-sqlite3/Release/better_sqlite3.node
+ → /Users/alextran119/Code/9router/node_modules/.pnpm/better-sqlite3@12.11.1/node_modules/better-sqlite3/build/default/better_sqlite3.node
+ → /Users/alextran119/Code/9router/node_modules/.pnpm/better-sqlite3@12.11.1/node_modules/better-sqlite3/compiled/22.22.3/darwin/arm64/better_sqlite3.node
+ → /Users/alextran119/Code/9router/node_modules/.pnpm/better-sqlite3@12.11.1/node_modules/better-sqlite3/addon-build/release/install-root/better_sqlite3.node
+ → /Users/alextran119/Code/9router/node_modules/.pnpm/better-sqlite3@12.11.1/node_modules/better-sqlite3/addon-build/debug/install-root/better_sqlite3.node
+ → /Users/alextran119/Code/9router/node_modules/.pnpm/better-sqlite3@12.11.1/node_modules/better-sqlite3/addon-build/default/install-root/better_sqlite3.node
+ → /Users/alextran119/Code/9router/node_modules/.pnpm/better-sqlite3@12.11.1/node_modules/better-sqlite3/lib/binding/node-v127-darwin-arm64/better_sqlite3.node
+
+stdout | tests/unit/db-sqlite-vs-lowdb.test.js
+[DB] Driver: node:sqlite | file: /var/folders/9r/j3cd5mvj5b59j1ny81_k9cjm0000gn/T/9router-db-compare-DNpTKP/db/data.sqlite
+
+stdout | tests/unit/db-sqlite-vs-lowdb.test.js
+[DB][migrate] applied #1 initial
+[DB][migrate] applied #2 thread-route-bindings
+[DB][migrate] applied #3 session-affinity-v2
+
+ ✓ tests/unit/session-affinity-db.test.js (9 tests) 90ms
+ ✓ tests/unit/db-sqlite-vs-lowdb.test.js (20 tests) 375ms
+
+ Test Files  5 passed (5)
+      Tests  63 passed (63)
+   Start at  22:23:33
+   Duration  1.51s (transform 160ms, setup 0ms, collect 251ms, tests 492ms, environment 0ms, prepare 274ms)
+
+
+=== deterministic-scenario ===
+
+ RUN  v3.2.4 /Users/alextran119/Code/9router
+
+stdout | .omo/evidence/affinity-v2-20260722T221116-green/session-affinity-scenario.test.js > records the durable session affinity V2 scenario
+AFFINITY_SCENARIO={"scenario":"temporary real SQLite + in-process coordinator","strictCursor":["account-a","account-b","account-a"],"repeatedRouteEpoch":1,"sameProviderConnection":"account-a","providerSplit":{"codex":"account-a","anthropic":"account-anthropic"},"restartBinding":"account-a","rebinds":["bound_connection_unavailable","retryable_provider_failure"],"protectedRebindStatus":409,"legacyMigrationConnection":"account-legacy","ttlCleanup":"removed both session binding rows"}
+
+ ✓ .omo/evidence/affinity-v2-20260722T221116-green/session-affinity-scenario.test.js (1 test) 25ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  22:23:35
+   Duration  1.34s (transform 24ms, setup 0ms, collect 36ms, tests 25ms, environment 0ms, prepare 26ms)
+

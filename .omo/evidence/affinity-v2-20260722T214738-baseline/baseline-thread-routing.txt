@@ -1,0 +1,53 @@
+command: pnpm exec vitest run --config tests/vitest.config.js tests/unit/thread-routing.test.js
+started_at: 2026-07-22T21:47:38+07:00
+
+? Verifying lockfile against supply-chain policies (644 entries)...
+
+   ╭───────────────────────────────────────────────╮
+   │                                               │
+   │      Update available! 11.5.0 → 11.15.1.      │
+   │     Changelog: https://pnpm.io/v/11.15.1      │
+   │   To update, run: corepack use pnpm@11.15.1   │
+   │                                               │
+   ╰───────────────────────────────────────────────╯
+
+✓ Lockfile passes supply-chain policies (644 entries in 4.7s)
+Lockfile is up to date, resolution step is skipped
+Already up to date
+
+[ERR_PNPM_IGNORED_BUILDS] Ignored build scripts: better-sqlite3@12.11.1, sharp@0.34.5, unrs-resolver@1.12.2
+
+Run "pnpm approve-builds" to pick which dependencies should be allowed to run scripts.
+[ERROR] Command failed with exit code 1: '/opt/homebrew/Cellar/node@22/22.22.3/bin/node' /Users/alextran119/.cache/node/corepack/v1/pnpm/11.5.0/bin/pnpm.mjs install
+
+pnpm: Command failed with exit code 1: '/opt/homebrew/Cellar/node@22/22.22.3/bin/node' /Users/alextran119/.cache/node/corepack/v1/pnpm/11.5.0/bin/pnpm.mjs install
+    at getFinalError (file:///Users/alextran119/.cache/node/corepack/v1/pnpm/11.5.0/dist/pnpm.mjs:3761:14)
+    at makeError (file:///Users/alextran119/.cache/node/corepack/v1/pnpm/11.5.0/dist/pnpm.mjs:6068:21)
+    at getSyncResult (file:///Users/alextran119/.cache/node/corepack/v1/pnpm/11.5.0/dist/pnpm.mjs:7912:10)
+    at spawnSubprocessSync (file:///Users/alextran119/.cache/node/corepack/v1/pnpm/11.5.0/dist/pnpm.mjs:7872:14)
+    at execaCoreSync (file:///Users/alextran119/.cache/node/corepack/v1/pnpm/11.5.0/dist/pnpm.mjs:7802:23)
+    at callBoundExeca (file:///Users/alextran119/.cache/node/corepack/v1/pnpm/11.5.0/dist/pnpm.mjs:10330:23)
+    at boundExeca (file:///Users/alextran119/.cache/node/corepack/v1/pnpm/11.5.0/dist/pnpm.mjs:10307:49)
+    at sync (file:///Users/alextran119/.cache/node/corepack/v1/pnpm/11.5.0/dist/pnpm.mjs:10466:10)
+    at runPnpmCli (file:///Users/alextran119/.cache/node/corepack/v1/pnpm/11.5.0/dist/pnpm.mjs:217979:5)
+    at runDepsStatusCheck (file:///Users/alextran119/.cache/node/corepack/v1/pnpm/11.5.0/dist/pnpm.mjs:219711:7)
+
+runner_fallback: ./node_modules/.bin/vitest run --config tests/vitest.config.js tests/unit/thread-routing.test.js
+started_at: 2026-07-22T21:48:14+07:00
+
+
+ RUN  v3.2.4 /Users/alextran119/Code/9router
+
+ ✓ tests/unit/thread-routing.test.js (11 tests) 5ms
+
+ Test Files  1 passed (1)
+      Tests  11 passed (11)
+   Start at  21:48:14
+   Duration  279ms (transform 32ms, setup 0ms, collect 35ms, tests 5ms, environment 0ms, prepare 34ms)
+
+
+cleanup: pnpm-lock.yaml and pnpm-workspace.yaml were created by the failed pnpm exec baseline and deleted via apply_patch
+cleanup_at: 2026-07-22T21:52:46+07:00
+?? .omo/
+
+red_test_files_added: session-affinity-v2, session-affinity-db, session-affinity-auth
