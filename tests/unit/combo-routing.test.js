@@ -106,6 +106,58 @@ describe("combo round-robin routing", () => {
     expect(calls).toEqual(["provider/model-b", "provider/model-a"]);
   });
 
+  it("returns the pinned 404 when an eligible fallback callback vetoes rotation", async () => {
+    const calls = [];
+    const fallbackEvents = [];
+    const response = await handleComboChat({
+      body: { messages: [{ role: "user", content: "hello" }] },
+      models: ["provider/model-a", "provider/model-b"],
+      handleSingleModel: async (_body, model) => {
+        calls.push(model);
+        if (model === "provider/model-b") {
+          return new Response("pinned model not found", { status: 404 });
+        }
+        return new Response("unexpected fallback");
+      },
+      log: { info() {}, warn() {} },
+      comboName: "quick",
+      comboStrategy: "fallback",
+      preferredModel: "provider/model-b",
+      onEligibleFallback: (event) => {
+        fallbackEvents.push(event);
+        return false;
+      },
+    });
+
+    expect(response.status).toBe(404);
+    await expect(response.text()).resolves.toBe("pinned model not found");
+    expect(calls).toEqual(["provider/model-b"]);
+    expect(fallbackEvents).toEqual([{ model: "provider/model-b", status: 404 }]);
+  });
+
+  it("keeps legacy eligible 404 fallback when no veto callback is supplied", async () => {
+    const calls = [];
+    const response = await handleComboChat({
+      body: { messages: [{ role: "user", content: "hello" }] },
+      models: ["provider/model-a", "provider/model-b"],
+      handleSingleModel: async (_body, model) => {
+        calls.push(model);
+        if (model === "provider/model-b") {
+          return new Response("legacy model not found", { status: 404 });
+        }
+        return new Response("legacy fallback");
+      },
+      log: { info() {}, warn() {} },
+      comboName: "quick",
+      comboStrategy: "fallback",
+      preferredModel: "provider/model-b",
+    });
+
+    expect(response.ok).toBe(true);
+    await expect(response.text()).resolves.toBe("legacy fallback");
+    expect(calls).toEqual(["provider/model-b", "provider/model-a"]);
+  });
+
   it("does not try another combo model for a deterministic 400", async () => {
     const calls = [];
     const response = await handleComboChat({

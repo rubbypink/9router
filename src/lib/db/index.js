@@ -40,6 +40,11 @@ export {
 
 export {
   getThreadRouteBinding, upsertThreadRouteBinding,
+  getSessionModelBinding, upsertSessionModelBinding,
+  getSessionConnectionBinding, upsertSessionConnectionBinding,
+  selectNextSessionAffinityConnection,
+  cleanupExpiredSessionAffinityBindings,
+  getLegacySessionRouteBinding, migrateLegacySessionRouteBinding,
 } from "./repos/threadRoutesRepo.js";
 
 // Aliases (model + custom + mitm)
@@ -84,6 +89,9 @@ export async function exportDb() {
     apiKeys: db.all(`SELECT * FROM apiKeys`).map((r) => ({ id: r.id, key: r.key, name: r.name, machineId: r.machineId, isActive: r.isActive === 1, createdAt: r.createdAt })),
     combos: db.all(`SELECT * FROM combos`).map((r) => ({ id: r.id, name: r.name, kind: r.kind, models: parseJson(r.models, []), createdAt: r.createdAt, updatedAt: r.updatedAt })),
     threadRouteBindings: db.all(`SELECT * FROM threadRouteBindings`),
+    sessionModelBindings: db.all(`SELECT * FROM sessionModelBindings`),
+    sessionConnectionBindings: db.all(`SELECT * FROM sessionConnectionBindings`),
+    providerRoundRobinCursors: db.all(`SELECT * FROM providerRoundRobinCursors`),
     modelAliases: {},
     customModels: [],
     mitmAlias: {},
@@ -113,6 +121,9 @@ export async function importDb(payload) {
     db.run(`DELETE FROM apiKeys`);
     db.run(`DELETE FROM combos`);
     db.run(`DELETE FROM threadRouteBindings`);
+    db.run(`DELETE FROM sessionModelBindings`);
+    db.run(`DELETE FROM sessionConnectionBindings`);
+    db.run(`DELETE FROM providerRoundRobinCursors`);
     db.run(`DELETE FROM kv WHERE scope IN ('modelAliases', 'customModels', 'mitmAlias', 'pricing')`);
 
     // Settings
@@ -170,6 +181,50 @@ export async function importDb(payload) {
           route.lastRoutedAt,
           route.lastSuccessAt || null,
         ],
+      );
+    }
+    for (const binding of payload.sessionModelBindings || []) {
+      db.run(
+        `INSERT OR REPLACE INTO sessionModelBindings(
+          sessionKey, routeAlias, model, resolvedModel, providerId, routeEpoch,
+          assignedAt, lastRoutedAt, lastSuccessAt, rebindReason
+        ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          binding.sessionKey,
+          binding.routeAlias,
+          binding.model,
+          binding.resolvedModel,
+          binding.providerId,
+          binding.routeEpoch || 1,
+          binding.assignedAt,
+          binding.lastRoutedAt,
+          binding.lastSuccessAt || null,
+          binding.rebindReason || null,
+        ],
+      );
+    }
+    for (const binding of payload.sessionConnectionBindings || []) {
+      db.run(
+        `INSERT OR REPLACE INTO sessionConnectionBindings(
+          sessionKey, providerId, connectionId, routeEpoch, assignedAt,
+          lastRoutedAt, lastSuccessAt, rebindReason
+        ) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          binding.sessionKey,
+          binding.providerId,
+          binding.connectionId,
+          binding.routeEpoch || 1,
+          binding.assignedAt,
+          binding.lastRoutedAt,
+          binding.lastSuccessAt || null,
+          binding.rebindReason || null,
+        ],
+      );
+    }
+    for (const cursor of payload.providerRoundRobinCursors || []) {
+      db.run(
+        `INSERT OR REPLACE INTO providerRoundRobinCursors(providerId, position, updatedAt) VALUES(?, ?, ?)`,
+        [cursor.providerId, cursor.position || 0, cursor.updatedAt],
       );
     }
     for (const [a, m] of Object.entries(payload.modelAliases || {})) {

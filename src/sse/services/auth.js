@@ -4,6 +4,7 @@ import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLock
 import { ACCOUNT_HEALTH_CONFIG } from "open-sse/config/errorConfig.js";
 import { resolveQuotaPolicy } from "open-sse/config/quotaPolicy.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
+import { selectNextSessionAffinityConnection } from "@/lib/db/repos/threadRoutesRepo.js";
 import * as log from "../utils/logger.js";
 
 // Mutex to prevent race conditions during account selection
@@ -158,6 +159,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     ? excludeConnectionIds
     : (excludeConnectionIds ? new Set([excludeConnectionIds]) : new Set());
   const preferredConnectionId = options?.preferredConnectionId || null;
+  const sessionKey = options?.sessionKey || null;
   // Acquire mutex to prevent race conditions
   const currentMutex = selectionMutex;
   let resolveMutex;
@@ -213,6 +215,10 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       if (excludeSet.has(c.id)) return false;
       if (isModelLockActive(c, model)) return false;
       return true;
+    }).sort((left, right) => {
+      const priorityDiff = (left.priority ?? 999) - (right.priority ?? 999);
+      if (priorityDiff !== 0) return priorityDiff;
+      return String(left.id).localeCompare(String(right.id));
     });
 
     log.debug("AUTH", `${provider} | available: ${availableConnections.length}/${connections.length}`);
@@ -260,6 +266,8 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     }
     if (connection) {
       // skip strategy
+    } else if (sessionKey) {
+      connection = selectNextSessionAffinityConnection(providerId, availableConnections);
     } else if (strategy === "round-robin") {
       const stickyLimit = providerOverride.stickyRoundRobinLimit || settings.stickyRoundRobinLimit || 3;
 

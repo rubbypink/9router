@@ -7,6 +7,8 @@ import { getMetaSync, setMetaSync } from "./helpers/metaStore.js";
 import { makeBackupDir, backupFile, backupDbLite, pruneOldBackups } from "./backup.js";
 import { getAppVersion } from "./version.js";
 import { stringifyJson } from "./helpers/jsonCol.js";
+import { cleanupExpiredSessionAffinityBindings } from "./sessionAffinityCleanup.js";
+import { getSessionAffinityTtlMs } from "../../../open-sse/config/threadAffinityConfig.js";
 
 // Marker file: prevents re-importing legacy JSON when user wipes data.sqlite.
 const MIGRATED_MARKER = path.join(DB_DIR, ".migrated-from-json");
@@ -248,6 +250,7 @@ export async function runMigrationOnce(adapter) {
 
   // 2. Additive sync (auto add missing columns/indexes declared in TABLES)
   syncSchemaFromTables(adapter);
+  cleanupExpiredSessionAffinityBindings(adapter, { ttlMs: getSessionAffinityTtlMs() });
 
   // Stamp the schema version we just reached so future boots skip re-backup.
   setMetaSync(adapter, "backupSchemaVersion", SCHEMA_VERSION);

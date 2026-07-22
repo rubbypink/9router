@@ -3,7 +3,7 @@
 // pre-change safety backup in migrate.js: when the stored version is lower,
 // one lightweight DB backup is taken before applying schema changes. Forgetting
 // to bump only skips that backup — it does NOT break the additive auto-sync.
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -112,6 +112,48 @@ export const TABLES = {
     indexes: [
       "CREATE INDEX IF NOT EXISTS idx_thread_routes_last_routed ON threadRouteBindings(lastRoutedAt DESC)",
     ],
+  },
+  sessionModelBindings: {
+    columns: {
+      sessionKey: "TEXT NOT NULL",
+      routeAlias: "TEXT NOT NULL",
+      model: "TEXT NOT NULL",
+      resolvedModel: "TEXT NOT NULL",
+      providerId: "TEXT NOT NULL",
+      routeEpoch: "INTEGER NOT NULL DEFAULT 1",
+      assignedAt: "INTEGER NOT NULL",
+      lastRoutedAt: "INTEGER NOT NULL",
+      lastSuccessAt: "INTEGER",
+      rebindReason: "TEXT",
+    },
+    primaryKey: "PRIMARY KEY (sessionKey, routeAlias)",
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_session_models_last_routed ON sessionModelBindings(lastRoutedAt DESC)",
+      "CREATE INDEX IF NOT EXISTS idx_session_models_provider ON sessionModelBindings(sessionKey, providerId)",
+    ],
+  },
+  sessionConnectionBindings: {
+    columns: {
+      sessionKey: "TEXT NOT NULL",
+      providerId: "TEXT NOT NULL",
+      connectionId: "TEXT NOT NULL",
+      routeEpoch: "INTEGER NOT NULL DEFAULT 1",
+      assignedAt: "INTEGER NOT NULL",
+      lastRoutedAt: "INTEGER NOT NULL",
+      lastSuccessAt: "INTEGER",
+      rebindReason: "TEXT",
+    },
+    primaryKey: "PRIMARY KEY (sessionKey, providerId)",
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_session_connections_last_routed ON sessionConnectionBindings(lastRoutedAt DESC)",
+    ],
+  },
+  providerRoundRobinCursors: {
+    columns: {
+      providerId: "TEXT PRIMARY KEY",
+      position: "INTEGER NOT NULL DEFAULT 0",
+      updatedAt: "INTEGER NOT NULL",
+    },
   },
   kv: {
     columns: {

@@ -254,11 +254,38 @@ describe("DB SQLite layer — public API parity", () => {
       lastRoutedAt: 11,
       lastSuccessAt: 12,
     });
+    sqliteDb.upsertSessionModelBinding("session-key", {
+      routeAlias: "quick",
+      model: "provider/model",
+      resolvedModel: "provider/model",
+      providerId: "provider",
+      routeEpoch: 2,
+      assignedAt: 13,
+      lastRoutedAt: 14,
+      lastSuccessAt: 15,
+      rebindReason: "retryable_provider_failure",
+    });
+    sqliteDb.upsertSessionConnectionBinding("session-key", {
+      providerId: "provider",
+      connectionId: "connection-1",
+      routeEpoch: 2,
+      assignedAt: 13,
+      lastRoutedAt: 14,
+      lastSuccessAt: 15,
+      rebindReason: "retryable_provider_failure",
+    });
+    expect(sqliteDb.selectNextSessionAffinityConnection("provider", [
+      { id: "connection-b", priority: 1 },
+      { id: "connection-a", priority: 1 },
+    ])).toMatchObject({ id: "connection-a" });
     const exported = await sqliteDb.exportDb();
     expect(exported.settings).toBeDefined();
     expect(Array.isArray(exported.providerConnections)).toBe(true);
     expect(typeof exported.modelAliases).toBe("object");
     expect(exported.threadRouteBindings).toHaveLength(1);
+    expect(exported.sessionModelBindings).toHaveLength(1);
+    expect(exported.sessionConnectionBindings).toHaveLength(1);
+    expect(exported.providerRoundRobinCursors).toHaveLength(1);
 
     // Add marker, export, import a different payload, verify reset
     await sqliteDb.setModelAlias("marker", "before");
@@ -274,6 +301,18 @@ describe("DB SQLite layer — public API parity", () => {
       connectionId: "connection-1",
       lastSuccessAt: 12,
     });
+    expect(sqliteDb.getSessionModelBinding("session-key", "quick")).toMatchObject({
+      model: "provider/model",
+      rebindReason: "retryable_provider_failure",
+    });
+    expect(sqliteDb.getSessionConnectionBinding("session-key", "provider")).toMatchObject({
+      connectionId: "connection-1",
+      rebindReason: "retryable_provider_failure",
+    });
+    expect(sqliteDb.selectNextSessionAffinityConnection("provider", [
+      { id: "connection-a", priority: 1 },
+      { id: "connection-b", priority: 1 },
+    ])).toMatchObject({ id: "connection-b" });
   });
 
   it("pricing: user pricing merged with constants", async () => {

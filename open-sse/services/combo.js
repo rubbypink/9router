@@ -335,7 +335,8 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         return result;
       }
 
-      onEligibleFallback?.({ model: modelStr, status: result.status });
+      const fallbackAllowed = await onEligibleFallback?.({ model: modelStr, status: result.status });
+      if (fallbackAllowed === false) return result;
 
       // For transient errors (503/502/504), wait for cooldown before falling through
       // so a briefly-overloaded provider gets a chance to recover rather than being

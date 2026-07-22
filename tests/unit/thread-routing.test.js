@@ -3,6 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("../../src/lib/db/repos/threadRoutesRepo.js", () => ({
   getThreadRouteBinding: vi.fn(() => null),
   upsertThreadRouteBinding: vi.fn(),
+  getSessionModelBinding: vi.fn(() => null),
+  upsertSessionModelBinding: vi.fn(),
+  getSessionConnectionBinding: vi.fn(() => null),
+  upsertSessionConnectionBinding: vi.fn(),
+  getLegacySessionRouteBinding: vi.fn(() => null),
+  cleanupExpiredSessionAffinityBindings: vi.fn(),
 }));
 
 import { resolveThreadIdentity } from "../../open-sse/utils/threadIdentity.js";
@@ -19,8 +25,8 @@ function deferred() {
 }
 
 describe("Codex thread identity", () => {
-  it("keeps thread affinity enabled even when a legacy environment value says false", () => {
-    expect(isCodexThreadAffinityEnabled({ CODEX_THREAD_AFFINITY: "false" })).toBe(true);
+  it("uses the legacy environment value when the v2 setting is absent", () => {
+    expect(isCodexThreadAffinityEnabled({ CODEX_THREAD_AFFINITY: "false" })).toBe(false);
   });
 
   it("prioritizes thread-id and never merges sibling agents through session-id", () => {
@@ -124,13 +130,14 @@ describe("ThreadRouteCoordinator", () => {
     expect(coordinator.getBinding(threadKey, "quick").lastSuccessAt).toEqual(expect.any(Number));
   });
 
-  it("rejects an explicit model change inside an already-bound thread", () => {
+  it("keeps independent model bindings for aliases inside one session", () => {
     const coordinator = new ThreadRouteCoordinator();
     const threadKey = "b".repeat(64);
     coordinator.bindRoute(threadKey, "quick", { model: "p/m", connectionId: "c" });
+    coordinator.bindRoute(threadKey, "different-alias", { model: "p/n", connectionId: "c" });
 
-    expect(() => coordinator.getBinding(threadKey, "different-alias"))
-      .toThrow(/requested model changed/i);
+    expect(coordinator.getBinding(threadKey, "quick")).toMatchObject({ model: "p/m", connectionId: "c" });
+    expect(coordinator.getBinding(threadKey, "different-alias")).toMatchObject({ model: "p/n", connectionId: "c" });
   });
 
   it("restores a persisted route after the coordinator process state is recreated", () => {

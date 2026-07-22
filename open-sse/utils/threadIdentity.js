@@ -29,33 +29,61 @@ function getHeader(headers, name) {
   return normalize(entry?.[1]);
 }
 
-function hashThreadId(value) {
-  return crypto.createHash("sha256").update(`codex-thread:${value}`).digest("hex");
+function hashIdentity(namespace, value) {
+  return crypto.createHash("sha256").update(`${namespace}:${value}`).digest("hex");
+}
+
+function resolveGroup(candidates, message) {
+  const present = candidates.filter(([, value]) => value);
+  if (present.length === 0) return null;
+  const [, selected] = present[0];
+  if (present.some(([, value]) => value !== selected)) {
+    throw new ThreadIdentityError(message, {
+      code: "thread_identity_mismatch",
+      status: 400,
+    });
+  }
+  return present[0];
 }
 
 export function resolveThreadIdentity({ headers, body = {} } = {}) {
   const explicitThread = getHeader(headers, "thread-id");
   const metadataThread = normalize(body?.client_metadata?.thread_id);
-
-  if (explicitThread) {
-    const conflicting = [metadataThread].filter(Boolean).find((value) => value !== explicitThread);
-    if (conflicting) {
-      throw new ThreadIdentityError("Conflicting Codex thread identifiers", {
-        code: "thread_identity_mismatch",
-        status: 400,
-      });
-    }
-  }
-
-  const candidates = [
+  const codex = resolveGroup([
     ["thread-id", explicitThread],
     ["client_metadata.thread_id", metadataThread],
-    ["prompt_cache_key", normalize(body?.prompt_cache_key)],
-  ];
-  for (const header of THREAD_ID_SESSION_HEADERS) candidates.push([header, getHeader(headers, header)]);
-  candidates.push(["body.session_id", normalize(body?.session_id)]);
+  ], "Conflicting Codex thread identifiers");
+  if (codex) return buildIdentity("codex", codex);
 
-  const selected = candidates.find(([, value]) => value);
-  if (!selected) return null;
-  return { source: selected[0], threadKey: hashThreadId(selected[1]) };
+  const opencodeAffinity = getHeader(headers, "x-session-affinity");
+  const opencodeSession = getHeader(headers, "x-session-id");
+  if (opencodeAffinity && opencodeSession && opencodeAffinity !== opencodeSession) {
+    throw new ThreadIdentityError("Conflicting OpenCode session identifiers", {
+      code: "thread_identity_mismatch",
+      status: 400,
+    });
+  }
+  if (opencodeAffinity) return buildIdentity("opencode", ["x-session-affinity", opencodeAffinity]);
+  if (opencodeSession) return buildIdentity("opencode", ["x-session-id", opencodeSession]);
+
+  const legacyCandidates = [
+    ["prompt_cache_key", normalize(body?.prompt_cache_key)],
+    ...THREAD_ID_SESSION_HEADERS.map((header) => [header, getHeader(headers, header)]),
+    ["body.session_id", normalize(body?.session_id)],
+  ];
+  const legacy = resolveGroup(legacyCandidates, "Conflicting legacy session identifiers");
+  if (!legacy) return null;
+  return buildIdentity("legacy", legacy);
+}
+
+function buildIdentity(client, [source, value]) {
+  const sessionKey = hashIdentity(`session-affinity:v2:${client}`, value);
+  const legacySessionKey = hashIdentity("codex-thread", value);
+  return {
+    client,
+    source,
+    sessionKey,
+    legacySessionKey,
+    threadKey: sessionKey,
+  };
 }

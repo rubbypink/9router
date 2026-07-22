@@ -32,6 +32,20 @@ import {
   runWithUpstreamRequestState,
 } from "open-sse/services/requestExecutionState.js";
 
+function isAffinityRebindEligible(result) {
+  const status = Number(result?.status);
+  if (!Number.isInteger(status) || status <= 0) return true;
+  return status === 401 || status === 402 || status === 403 || status === 408 || status === 429 || status >= 500;
+}
+
+function allowAffinityComboFallback(routeContext, { status }) {
+  if (!routeContext) return true;
+  if (!isAffinityRebindEligible({ status })) return false;
+  routeContext.allowRebind = true;
+  routeContext.rebindReason = "combo_eligible_fallback";
+  return true;
+}
+
 /**
  * Handle chat completion request
  * Supports: OpenAI, Claude, Gemini, OpenAI Responses API formats
@@ -136,11 +150,12 @@ export async function handleChat(request, clientRawRequest = null) {
         comboStrategy,
         comboStickyLimit,
         preferredModel: routeContext?.binding?.model || null,
-        onEligibleFallback: () => {
-          if (routeContext) routeContext.allowRebind = true;
-        },
+        onEligibleFallback: (details) => allowAffinityComboFallback(routeContext, details),
         onRequiredTransportRebind: () => {
-          if (routeContext) routeContext.allowRebind = true;
+          if (routeContext) {
+            routeContext.allowRebind = true;
+            routeContext.rebindReason = "transport_rebind";
+          }
         },
       });
     }
@@ -154,12 +169,14 @@ export async function handleChat(request, clientRawRequest = null) {
     try {
       const identity = resolveThreadIdentity({ headers: request.headers, body });
       if (!identity) return dispatch();
-      return await threadRouteCoordinator.run(identity.threadKey, modelStr, (binding) => dispatch({
+      return await threadRouteCoordinator.run(identity, modelStr, (binding) => dispatch({
         coordinator: threadRouteCoordinator,
-        threadKey: identity.threadKey,
+        sessionKey: identity.sessionKey,
+        legacySessionKey: identity.legacySessionKey,
         requestedModel: modelStr,
         binding,
         allowRebind: false,
+        rebindReason: null,
       }));
     } catch (error) {
       const status = Number.isInteger(error?.status) ? error.status : 500;
@@ -223,11 +240,12 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         comboStrategy,
         comboStickyLimit,
         preferredModel: routeContext?.binding?.model || null,
-        onEligibleFallback: () => {
-          if (routeContext) routeContext.allowRebind = true;
-        },
+        onEligibleFallback: (details) => allowAffinityComboFallback(routeContext, details),
         onRequiredTransportRebind: () => {
-          if (routeContext) routeContext.allowRebind = true;
+          if (routeContext) {
+            routeContext.allowRebind = true;
+            routeContext.rebindReason = "transport_rebind";
+          }
         },
       });
     }
@@ -247,15 +265,15 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   let lastError = null;
   let lastStatus = null;
   const resolvedRouteModel = `${provider}/${model}`;
-  if (routeContext?.binding && !routeContext.allowRebind && routeContext.binding.resolvedModel !== resolvedRouteModel) {
-    return errorResponse(409, "Pinned model route is no longer available");
-  }
 
   while (true) {
-    const preferredConnectionId = !routeContext?.allowRebind && routeContext?.binding?.resolvedModel === resolvedRouteModel
-      ? routeContext.binding.connectionId
+    const preferredConnectionId = !routeContext?.allowRebind
+      ? routeContext?.coordinator.getConnectionBinding(routeContext.sessionKey, provider)?.connectionId || null
       : null;
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId });
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, {
+      preferredConnectionId,
+      sessionKey: routeContext?.sessionKey || null,
+    });
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
@@ -274,10 +292,12 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     }
 
     if (preferredConnectionId && credentials.connectionId !== preferredConnectionId) {
-      return errorResponse(409, "Pinned account route is no longer available");
+      routeContext.allowRebind = true;
+      routeContext.rebindReason = "bound_connection_unavailable";
     }
 
     const selectedRoute = {
+      providerId: provider,
       model: modelStr,
       resolvedModel: resolvedRouteModel,
       connectionId: credentials.connectionId,
@@ -285,10 +305,13 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     if (routeContext) {
       try {
         routeContext.coordinator.bindRoute(
-          routeContext.threadKey,
+          routeContext.sessionKey,
           routeContext.requestedModel,
           selectedRoute,
-          { allowRebind: routeContext.allowRebind },
+          {
+            allowRebind: routeContext.allowRebind,
+            rebindReason: routeContext.rebindReason,
+          },
         );
       } catch (error) {
         return errorResponse(error.status || 409, error.message, error.code);
@@ -348,7 +371,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       onRequestSuccess: async () => {
         if (routeContext) {
           routeContext.coordinator.markSuccess(
-            routeContext.threadKey,
+            routeContext.sessionKey,
             routeContext.requestedModel,
             selectedRoute,
           );
@@ -358,6 +381,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     });
 
     if (result.success || result.routingFailure) return result.response;
+
+    if (routeContext && !isAffinityRebindEligible(result)) return result.response;
 
     // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
     const { shouldFallback } = await markAccountUnavailable(
@@ -371,7 +396,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     );
 
     if (shouldFallback) {
-      if (routeContext) routeContext.allowRebind = true;
+      if (routeContext) {
+        routeContext.allowRebind = true;
+        routeContext.rebindReason = "retryable_provider_failure";
+      }
       log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} UNAVAILABLE (${result.status}) → NEXT ACCOUNT`);
       excludeConnectionIds.add(credentials.connectionId);
       lastError = result.error;
