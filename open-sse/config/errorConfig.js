@@ -51,6 +51,12 @@ const COOLDOWN = {
   short: 5 * 1000,
 };
 
+export const UPSTREAM_EXHAUSTION_TEXTS = [
+  "resourceexhausted",
+  "resource exhausted",
+  "worker local total request limit",
+];
+
 /**
  * Unified error classification rules.
  * Checked top-to-bottom: text rules first (by order), then status rules.
@@ -66,6 +72,9 @@ export const ERROR_RULES = [
   { text: "rate limit",               backoff: true },
   { text: "too many requests",        backoff: true },
   { text: "quota exceeded",           backoff: true },
+  { text: "resourceexhausted",        backoff: true },
+  { text: "resource exhausted",       backoff: true },
+  { text: "worker local total request limit", backoff: true },
   { text: "capacity",                 backoff: true },
   { text: "overloaded",               backoff: true },
 

@@ -30,4 +30,8 @@ describe("provider/account fallback policy", () => {
     expect(checkFallbackError(400, "request not allowed by schema").shouldFallback).toBe(false);
     expect(checkFallbackError(400, "capacity field is invalid").shouldFallback).toBe(false);
   });
+
+  it("reroutes NVIDIA worker-pool exhaustion even when the upstream maps it to 400", () => {
+    expect(checkFallbackError(400, "ResourceExhausted: Worker local total request limit reached (516/48)").shouldFallback).toBe(true);
+  });
 });

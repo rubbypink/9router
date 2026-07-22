@@ -1,4 +1,4 @@
-import { ERROR_RULES, BACKOFF_CONFIG } from "../config/errorConfig.js";
+import { ERROR_RULES, BACKOFF_CONFIG, UPSTREAM_EXHAUSTION_TEXTS } from "../config/errorConfig.js";
 
 /**
  * Calculate exponential backoff cooldown for rate limits (429)
@@ -25,7 +25,8 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
     ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase()
     : "";
   const retryableClientStatuses = new Set([401, 402, 403, 404, 408, 429]);
-  if (Number.isInteger(status) && status >= 400 && status < 500 && !retryableClientStatuses.has(status)) {
+  const isUpstreamExhaustion = UPSTREAM_EXHAUSTION_TEXTS.some((text) => lowerError.includes(text));
+  if (Number.isInteger(status) && status >= 400 && status < 500 && !retryableClientStatuses.has(status) && !isUpstreamExhaustion) {
     return { shouldFallback: false, cooldownMs: 0 };
   }
 
