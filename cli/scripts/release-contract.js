@@ -4,7 +4,7 @@ const path = require("node:path");
 
 const ROUTING_CONTRACT_VERSION = "session-affinity/v2";
 const UPSTREAM_VERSION = "0.5.40";
-const CUSTOM_REVISION = "0.5.40-9trip.1";
+const CUSTOM_REVISION = "0.5.40-9trip.2";
 const PACKAGE_NAME = "9router";
 const ARCHIVE_NAME = `${PACKAGE_NAME}-${CUSTOM_REVISION}.tgz`;
 const RELEASE_MANIFEST_NAME = "release.json";

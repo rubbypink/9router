@@ -25,9 +25,10 @@ const {
   rollbackRelease,
   validateReleaseDirectory,
 } = require("../../cli/scripts/release-manager.js");
-
-const CUSTOM_VERSION = "0.5.40-9trip.1";
-const ARCHIVE_NAME = `9router-${CUSTOM_VERSION}.tgz`;
+const {
+  ARCHIVE_NAME,
+  CUSTOM_REVISION: CUSTOM_VERSION,
+} = require("../../cli/scripts/release-contract.js");
 const fixtureRoots = [];
 
 afterEach(() => {

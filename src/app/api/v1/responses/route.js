@@ -1,5 +1,10 @@
 import { handleChat } from "@/sse/handlers/chat.js";
 import { initTranslators } from "open-sse/translator/index.js";
+import {
+  createCodexModelsEtag,
+  getCodexModelCatalogState,
+  withCodexModelsEtag,
+} from "@/lib/codexModelCatalog";
 
 let initialized = false;
 
@@ -26,5 +31,7 @@ export async function OPTIONS() {
  */
 export async function POST(request) {
   await ensureInitialized();
-  return await handleChat(request);
+  const state = await getCodexModelCatalogState();
+  const response = await handleChat(request);
+  return withCodexModelsEtag(response, createCodexModelsEtag(state));
 }
