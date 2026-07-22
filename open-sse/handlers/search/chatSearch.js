@@ -3,6 +3,7 @@
  * /v1/search response format. Supports gemini, openai, xai, kimi, minimax, perplexity.
  */
 import { PROVIDER_MEDIA } from "../../providers/index.js";
+import { parseUpstreamError } from "../../utils/error.js";
 
 // Default search model + endpoint derive from registry searchViaChat (single source)
 const searchModel = (id) => PROVIDER_MEDIA[id]?.searchViaChat?.defaultModel;
@@ -402,6 +403,7 @@ export async function handleChatSearch({
   }
   clearTimeout(timer);
   const upstreamLatency = Date.now() - upstreamStart;
+  const errorResponse = resp.ok ? null : resp.clone();
 
   let data;
   try {
@@ -415,6 +417,7 @@ export async function handleChatSearch({
   }
 
   if (!resp.ok) {
+    const resetMetadata = await parseUpstreamError(errorResponse, { provider });
     const errMsg =
       data?.error?.message ||
       data?.error ||
@@ -424,7 +427,9 @@ export async function handleChatSearch({
     return {
       success: false,
       status: resp.status,
-      error: typeof errMsg === "string" ? errMsg : JSON.stringify(errMsg)
+      error: typeof errMsg === "string" ? errMsg : JSON.stringify(errMsg),
+      resetsAtMs: resetMetadata.resetsAtMs,
+      errorCode: resetMetadata.errorCode,
     };
   }
 

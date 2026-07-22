@@ -1,12 +1,149 @@
 import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
-import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
-import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
+import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil, getModelLockKey } from "open-sse/services/accountFallback.js";
+import { ACCOUNT_HEALTH_CONFIG } from "open-sse/config/errorConfig.js";
+import { resolveQuotaPolicy } from "open-sse/config/quotaPolicy.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import * as log from "../utils/logger.js";
 
 // Mutex to prevent race conditions during account selection
 let selectionMutex = Promise.resolve();
+
+const ACCOUNT_HEALTH_VERSION = 2;
+const ACCOUNT_HEALTH_ALL_MODELS = "__all";
+
+function healthModelKey(model) {
+  return model || ACCOUNT_HEALTH_ALL_MODELS;
+}
+
+function activeLockKeys(connection, now = Date.now()) {
+  return Object.keys(connection || {}).filter(key => (
+    key.startsWith("modelLock_") && new Date(connection[key]).getTime() > now
+  ));
+}
+
+function expiredLockKeys(connection, now = Date.now()) {
+  return Object.keys(connection || {}).filter(key => {
+    if (!key.startsWith("modelLock_") || !connection[key]) return false;
+    const expiry = new Date(connection[key]).getTime();
+    return !Number.isFinite(expiry) || expiry <= now;
+  });
+}
+
+function accountHealthReason(status, errorText) {
+  const text = typeof errorText === "string" ? errorText.toLowerCase() : "";
+  if (status === 429 || /quota|rate limit|too many requests|capacity/.test(text)) return "quota";
+  if ([401, 402, 403].includes(status)) return "credentials";
+  if (status >= 500 || /timeout|overload|temporarily unavailable/.test(text)) return "transient";
+  return "provider";
+}
+
+function currentAccountHealth(connection) {
+  const health = connection?.accountHealth;
+  if (!health || typeof health !== "object" || Array.isArray(health)) return null;
+  const models = health.models && typeof health.models === "object" && !Array.isArray(health.models)
+    ? health.models
+    : {};
+  const recentErrors = Array.isArray(health.recentErrors) ? health.recentErrors : [];
+  return { health, models, recentErrors };
+}
+
+function recordAccountHealth(connection, { model, status, errorCode, reason, retryAt, source, quotaPolicy, now }) {
+  const current = currentAccountHealth(connection);
+  const models = { ...(current?.models || {}) };
+  const observedAt = new Date(now).toISOString();
+  const entry = {
+    state: "unavailable",
+    reason: accountHealthReason(status, reason),
+    status,
+    errorCode: errorCode || null,
+    observedAt,
+    retryAt,
+    source,
+    quotaPolicy,
+    message: reason.slice(0, ACCOUNT_HEALTH_CONFIG.errorMessageLimit),
+  };
+  models[healthModelKey(model)] = entry;
+  const recentErrors = [
+    ...(current?.recentErrors || []),
+    { ...entry, model: model || null },
+  ].slice(-ACCOUNT_HEALTH_CONFIG.historyLimit);
+  return {
+    version: ACCOUNT_HEALTH_VERSION,
+    updatedAt: observedAt,
+    models,
+    recentErrors,
+  };
+}
+
+function clearExpiredAccountHealth(connection, clearedLockKeys = [], now = Date.now()) {
+  const current = currentAccountHealth(connection);
+  if (!current) return { changed: false, value: null };
+
+  const clearedModels = new Set(clearedLockKeys.map(key => key.slice("modelLock_".length)));
+  const models = {};
+  let changed = current.health.version !== ACCOUNT_HEALTH_VERSION;
+  for (const [model, value] of Object.entries(current.models)) {
+    const retryAt = new Date(value?.retryAt).getTime();
+    if (clearedModels.has(model) || !Number.isFinite(retryAt) || retryAt <= now) {
+      changed = true;
+      continue;
+    }
+    models[model] = value;
+  }
+
+  const recentErrors = current.recentErrors.slice(-ACCOUNT_HEALTH_CONFIG.historyLimit);
+  if (recentErrors.length !== current.recentErrors.length) changed = true;
+  if (!changed) return { changed: false, value: current.health };
+  return {
+    changed: true,
+    value: {
+      version: ACCOUNT_HEALTH_VERSION,
+      updatedAt: new Date(now).toISOString(),
+      models,
+      recentErrors,
+    },
+  };
+}
+
+function accountRecoveryUpdate(connection, extraClearedLockKeys = [], now = Date.now()) {
+  const expired = expiredLockKeys(connection, now);
+  const clearedLockKeys = [...new Set([...expired, ...extraClearedLockKeys])];
+  const update = Object.fromEntries(clearedLockKeys.map(key => [key, null]));
+  const health = clearExpiredAccountHealth(connection, clearedLockKeys, now);
+  if (health.changed) update.accountHealth = health.value;
+
+  if (activeLockKeys(connection, now).filter(key => !clearedLockKeys.includes(key)).length === 0) {
+    if (connection.testStatus === "unavailable" || connection.lastError || connection.lastErrorAt || connection.errorCode || connection.backoffLevel) {
+      Object.assign(update, {
+        testStatus: "active",
+        lastError: null,
+        lastErrorAt: null,
+        errorCode: null,
+        backoffLevel: 0,
+      });
+    }
+  }
+  return update;
+}
+
+async function reconcileConnectionAvailability(connection) {
+  const update = accountRecoveryUpdate(connection);
+  if (Object.keys(update).length === 0) return connection;
+  return (await updateProviderConnection(connection.id, update)) || { ...connection, ...update };
+}
+
+export async function reconcileAccountHealth() {
+  const connections = await getProviderConnections({ isActive: true });
+  let reconciled = 0;
+  for (const connection of connections) {
+    const update = accountRecoveryUpdate(connection);
+    if (Object.keys(update).length === 0) continue;
+    await updateProviderConnection(connection.id, update);
+    reconciled++;
+  }
+  return { checked: connections.length, reconciled };
+}
 
 /**
  * Get provider credentials from localDb
@@ -59,7 +196,11 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       };
     }
 
-    const connections = await getProviderConnections({ provider: providerId, isActive: true });
+    const storedConnections = await getProviderConnections({ provider: providerId, isActive: true });
+    const connections = [];
+    for (const storedConnection of storedConnections) {
+      connections.push(await reconcileConnectionAvailability(storedConnection));
+    }
     log.debug("AUTH", `${provider} | total connections: ${connections.length}, excludeIds: ${excludeSet.size > 0 ? [...excludeSet].join(",") : "none"}, model: ${model || "any"}`);
 
     if (connections.length === 0) {
@@ -186,10 +327,9 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         vercelRelayUrl: resolvedProxy.vercelRelayUrl || "",
       },
       connectionId: connection.id,
-      // Include current status for optimization check
       testStatus: connection.testStatus,
       lastError: connection.lastError,
-      // Pass full connection for clearAccountError to read modelLock_* keys
+      accountHealth: connection.accountHealth,
       _connection: connection
     };
   } finally {
@@ -207,36 +347,58 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
  * @param {string|null} model - The specific model that triggered the error
  * @returns {{ shouldFallback: boolean, cooldownMs: number }}
  */
-export async function markAccountUnavailable(connectionId, status, errorText, provider = null, model = null, resetsAtMs = null) {
+export async function markAccountUnavailable(connectionId, status, errorText, provider = null, model = null, resetsAtMs = null, failure = {}) {
   if (!connectionId || connectionId === "noauth") return { shouldFallback: false, cooldownMs: 0 };
   const connections = await getProviderConnections({ provider });
   const conn = connections.find(c => c.id === connectionId);
   const backoffLevel = conn?.backoffLevel || 0;
+  const now = Date.now();
+  const preciseReset = Number(resetsAtMs);
+  const hasProviderReset = Number.isFinite(preciseReset) && preciseReset > now;
+  const quotaPolicy = resolveQuotaPolicy(provider);
 
-  // Provider-specific precise cooldown (e.g. codex usage_limit_reached resets_at) overrides backoff
   let shouldFallback, cooldownMs, newBackoffLevel;
-  if (resetsAtMs && resetsAtMs > Date.now()) {
+  if (hasProviderReset) {
     shouldFallback = true;
-    cooldownMs = Math.min(resetsAtMs - Date.now(), MAX_RATE_LIMIT_COOLDOWN_MS);
+    cooldownMs = preciseReset - now;
     newBackoffLevel = 0;
   } else {
     ({ shouldFallback, cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel));
+    if (shouldFallback && status === 429 && quotaPolicy.fallbackCooldownMs) {
+      cooldownMs = quotaPolicy.fallbackCooldownMs;
+      newBackoffLevel = 0;
+    }
   }
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
 
   const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
-  const lockUpdate = buildModelLockUpdate(model, cooldownMs);
+  const lockKey = getModelLockKey(model);
+  const lockUpdate = hasProviderReset
+    ? { [lockKey]: new Date(preciseReset).toISOString() }
+    : buildModelLockUpdate(model, cooldownMs);
+  const retryAt = lockUpdate[lockKey];
+  const errorCode = failure?.errorCode ? String(failure.errorCode) : String(status);
+  const accountHealth = recordAccountHealth(conn, {
+    model,
+    status,
+    errorCode,
+    reason,
+    retryAt,
+    source: hasProviderReset ? "provider-reset" : "fallback-policy",
+    quotaPolicy: quotaPolicy.id,
+    now,
+  });
 
   await updateProviderConnection(connectionId, {
     ...lockUpdate,
     testStatus: "unavailable",
     lastError: reason,
-    errorCode: status,
+    errorCode,
     lastErrorAt: new Date().toISOString(),
-    backoffLevel: newBackoffLevel ?? backoffLevel
+    backoffLevel: newBackoffLevel ?? backoffLevel,
+    accountHealth,
   });
 
-  const lockKey = Object.keys(lockUpdate)[0];
   const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
   log.warn("AUTH", `${connName} locked ${lockKey} for ${Math.round(cooldownMs / 1000)}s [${status}]`);
 
@@ -259,35 +421,17 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
 export async function clearAccountError(connectionId, currentConnection, model = null) {
   if (!connectionId || connectionId === "noauth") return;
   const conn = currentConnection._connection || currentConnection;
+  if (!conn) return;
   const now = Date.now();
   const allLockKeys = Object.keys(conn).filter(k => k.startsWith("modelLock_"));
 
-  if (!conn.testStatus && !conn.lastError && allLockKeys.length === 0) return;
-
-  // Keys to clear: current model's lock + all expired locks
   const keysToClear = allLockKeys.filter(k => {
-    if (model && k === `modelLock_${model}`) return true; // succeeded model
-    if (model && k === "modelLock___all") return true;    // account-level lock
-    const expiry = conn[k];
-    return expiry && new Date(expiry).getTime() <= now;   // expired
+    if (model && k === getModelLockKey(model)) return true;
+    if (model && k === getModelLockKey(null)) return true;
+    return conn[k] && new Date(conn[k]).getTime() <= now;
   });
-
-  if (keysToClear.length === 0 && conn.testStatus !== "unavailable" && !conn.lastError) return;
-
-  // Check if any active locks remain after clearing
-  const remainingActiveLocks = allLockKeys.filter(k => {
-    if (keysToClear.includes(k)) return false;
-    const expiry = conn[k];
-    return expiry && new Date(expiry).getTime() > now;
-  });
-
-  const clearObj = Object.fromEntries(keysToClear.map(k => [k, null]));
-
-  // Only reset error state if no active locks remain
-  if (remainingActiveLocks.length === 0) {
-    Object.assign(clearObj, { testStatus: "active", lastError: null, lastErrorAt: null, backoffLevel: 0 });
-  }
-
+  const clearObj = accountRecoveryUpdate(conn, keysToClear, now);
+  if (Object.keys(clearObj).length === 0) return;
   await updateProviderConnection(connectionId, clearObj);
 }
 

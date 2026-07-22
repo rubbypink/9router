@@ -143,7 +143,7 @@ function buildEnvWithRuntime(baseEnv = process.env) {
   const bundledNm = path.join(__dirname, "..", "app", "node_modules");
   const existing = baseEnv.NODE_PATH || "";
   const NODE_PATH = [runtimeNm, bundledNm, existing].filter(Boolean).join(path.delimiter);
-  return { ...baseEnv, NODE_PATH };
+  return { ...baseEnv, NODE_PATH, CODEX_THREAD_AFFINITY: "true" };
 }
 
 module.exports = {

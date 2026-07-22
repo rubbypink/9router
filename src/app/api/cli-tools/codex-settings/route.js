@@ -7,12 +7,12 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import { parseTOML, stringifyTOML } from "confbox";
+import { redactConfigSecrets, resolveCodexDir } from "./helpers.js";
 
 const execAsync = promisify(exec);
 
-const getCodexDir = () => path.join(os.homedir(), ".codex");
+const getCodexDir = () => resolveCodexDir(process.env, os.homedir);
 const getCodexConfigPath = () => path.join(getCodexDir(), "config.toml");
-const getCodexAuthPath = () => path.join(getCodexDir(), "auth.json");
 
 // Flatten confbox-parsed TOML into a writable object, preserving nested tables
 const parsedToWritable = (obj) => obj ?? {};
@@ -96,7 +96,7 @@ export async function GET() {
 
     return NextResponse.json({
       installed: true,
-      config,
+      config: redactConfigSecrets(config),
       has9Router: has9RouterConfig(config),
       configPath: getCodexConfigPath(),
     });
@@ -128,46 +128,25 @@ export async function POST(request) {
       parsed = parsedToWritable(parseTOML(existingConfig));
     } catch { /* No existing config */ }
 
-    // Update only 9Router related fields (api_key goes to auth.json, not config.toml)
-    parsed.model = model;
-    parsed.model_provider = "9router";
-
-    // Update or create 9router provider section (no api_key - Codex reads from auth.json)
     // Ensure /v1 suffix is added only once
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
     setNestedSection(parsed, "model_providers.9router", {
       name: "9Router",
       base_url: normalizedBaseUrl,
       wire_api: "responses",
-    });
-
-    // Add subagent configuration
-    const effectiveSubagentModel = subagentModel || model;
-    setNestedSection(parsed, "agents.subagent", {
-      model: effectiveSubagentModel,
+      experimental_bearer_token: apiKey,
     });
 
     // Write merged config
     const configContent = stringifyTOML(parsed);
     await fs.writeFile(configPath, configContent);
 
-    // Update auth.json with OPENAI_API_KEY (Codex reads this first)
-    const authPath = getCodexAuthPath();
-    let authData = {};
-    try {
-      const existingAuth = await fs.readFile(authPath, "utf-8");
-      authData = JSON.parse(existingAuth);
-    } catch { /* No existing auth */ }
-    
-    // Force apikey mode (keep existing tokens untouched for ChatGPT login reuse)
-    authData.OPENAI_API_KEY = apiKey;
-    authData.auth_mode = "apikey";
-    await fs.writeFile(authPath, JSON.stringify(authData, null, 2));
-
     return NextResponse.json({
       success: true,
-      message: "Codex settings applied successfully!",
+      message: "9Router provider added without changing the primary Codex provider or authentication.",
       configPath,
+      model,
+      subagentModel: subagentModel || model,
     });
   } catch (error) {
     console.log("Error updating codex settings:", error);
@@ -204,28 +183,9 @@ export async function DELETE() {
     // Remove 9router provider section
     deleteNestedSection(parsed, "model_providers.9router");
 
-    // Remove subagent configuration
-    deleteNestedSection(parsed, "agents.subagent");
-
     // Write updated config
     const configContent = stringifyTOML(parsed);
     await fs.writeFile(configPath, configContent);
-
-    // Remove OPENAI_API_KEY from auth.json
-    const authPath = getCodexAuthPath();
-    try {
-      const existingAuth = await fs.readFile(authPath, "utf-8");
-      const authData = JSON.parse(existingAuth);
-      delete authData.OPENAI_API_KEY;
-      delete authData.auth_mode;
-
-      // Write back or delete if empty
-      if (Object.keys(authData).length === 0) {
-        await fs.unlink(authPath);
-      } else {
-        await fs.writeFile(authPath, JSON.stringify(authData, null, 2));
-      }
-    } catch { /* No auth file */ }
 
     return NextResponse.json({
       success: true,

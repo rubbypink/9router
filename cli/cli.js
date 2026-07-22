@@ -7,6 +7,8 @@ const https = require("https");
 const net = require("net");
 const os = require("os");
 
+process.env.CODEX_THREAD_AFFINITY = "true";
+
 // Poll until the server accepts TCP connections on port, or timeout — avoids blind fixed waits.
 function waitServerReady(port, { timeoutMs = 15000, intervalMs = 150 } = {}) {
   const deadline = Date.now() + timeoutMs;

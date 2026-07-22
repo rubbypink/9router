@@ -9,6 +9,13 @@ import { getSettings } from "@/lib/localDb";
 import { PROVIDER_MODELS } from "@/shared/constants/models";
 import { GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS } from "open-sse/config/runtimeConfig.js";
 import { initTranslators } from "open-sse/translator/index.js";
+import { parseUpstreamError } from "open-sse/utils/error.js";
+import {
+  createUpstreamRequestState,
+  isUpstreamExecutionControlError,
+  runAsUpstreamDispatch,
+  runWithUpstreamRequestState,
+} from "open-sse/services/requestExecutionState.js";
 
 let initialized = false;
 const GEMINI_NATIVE_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
@@ -85,7 +92,10 @@ export async function POST(request, { params }) {
     const body = await request.json();
 
     if (isGeminiNativeTtsRequest(model, body)) {
-      return await forwardGeminiNativeRequest(request, body, model, action);
+      return await runWithUpstreamRequestState(
+        createUpstreamRequestState(),
+        () => forwardGeminiNativeRequest(request, body, model, action),
+      );
     }
 
     // Streaming is determined by URL action suffix:
@@ -287,17 +297,28 @@ async function forwardGeminiNativeRequest(request, body, model, action) {
 
     let upstreamResponse;
     try {
-      upstreamResponse = await fetch(upstreamUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": request.headers.get("Content-Type") || "application/json",
-          ...authHeaders,
-        },
-        body: bodyText,
-        signal: attemptController.signal,
-      });
+      upstreamResponse = await runAsUpstreamDispatch("gemini", () => fetch(upstreamUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": request.headers.get("Content-Type") || "application/json",
+            ...authHeaders,
+          },
+          body: bodyText,
+          signal: attemptController.signal,
+        }), [GEMINI_NATIVE_BASE_URL]);
     } catch (error) {
       const durationMs = Date.now() - startedAt;
+      if (isUpstreamExecutionControlError(error)) {
+        return Response.json({
+          error: {
+            message: error.message,
+            type: "server_error",
+            code: error.code,
+            attempts: error.attempts,
+            max_attempts: error.maxAttempts,
+          },
+        }, { status: error.status || 503 });
+      }
       if (request.signal?.aborted && !timedOut) {
         console.log(`[GEMINI_NATIVE] client aborted model=${modelId} ms=${durationMs} conn=${safeConnection}`);
         return Response.json({ error: { message: "Client closed request" } }, { status: 499 });
@@ -340,13 +361,16 @@ async function forwardGeminiNativeRequest(request, body, model, action) {
       });
     }
 
+    const parsedError = await parseUpstreamError(upstreamResponse.clone(), { provider: "gemini" });
     const errorText = await upstreamResponse.text();
     const { shouldFallback } = await markAccountUnavailable(
       credentials.connectionId,
       upstreamResponse.status,
       errorText,
       "gemini",
-      modelId
+      modelId,
+      parsedError.resetsAtMs,
+      { errorCode: parsedError.errorCode },
     );
 
     if (shouldFallback) {

@@ -3,6 +3,7 @@ import REGISTRY from "./registry/index.js";
 import { PROVIDER_DEFAULTS } from "./schema.js";
 import { normalizeModel } from "./models/schema.js";
 import { buildTtsProviderModels } from "../config/ttsModels.js";
+import { buildProviderQuotaPolicies } from "../config/quotaPolicy.js";
 
 // oauth block is canonical for these fields; inject into transport so executors reading
 // this.config.{clientId,clientSecret,tokenUrl} keep working without duplicating in transport
@@ -31,6 +32,7 @@ export const PROVIDERS = {};
 export const PROVIDER_MODELS = {};
 export const PROVIDER_OAUTH = {};
 export const PROVIDER_MEDIA = {};
+export const PROVIDER_QUOTA_POLICIES = buildProviderQuotaPolicies(REGISTRY);
 for (const entry of REGISTRY) {
   if (entry.transport) {
     PROVIDERS[entry.id] = buildTransport(entry.transport, entry.oauth);

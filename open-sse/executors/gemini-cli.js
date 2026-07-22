@@ -1,6 +1,7 @@
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { OAUTH_ENDPOINTS, GEMINI_CLI_API_CLIENT, geminiCLIUserAgent } from "../config/appConstants.js";
+import { parseRetryAfterMs } from "../utils/error.js";
 
 export class GeminiCLIExecutor extends BaseExecutor {
   constructor() {
@@ -45,6 +46,8 @@ export class GeminiCLIExecutor extends BaseExecutor {
         for (const d of details) {
           if (d?.["@type"] === "type.googleapis.com/google.rpc.RetryInfo" && d?.retryDelay) {
             base.retryAfter = d.retryDelay;
+            const retryMs = parseRetryAfterMs(d.retryDelay);
+            if (retryMs) base.resetsAtMs = Date.now() + retryMs;
             break;
           }
         }

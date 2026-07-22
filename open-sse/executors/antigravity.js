@@ -370,6 +370,30 @@ export class AntigravityExecutor extends BaseExecutor {
     ].filter(Boolean).map(v => typeof v === "string" ? v : JSON.stringify(v)).join("\n");
   }
 
+  parseError(response, bodyText) {
+    const base = super.parseError(response, bodyText);
+    let errorJson = null;
+    try {
+      errorJson = bodyText ? JSON.parse(bodyText) : null;
+    } catch {
+      // The base message remains useful for non-JSON upstream failures.
+    }
+
+    const message = this.extractErrorMessage(errorJson, bodyText) || base.message;
+    const retryMs = this.parseRetryHeaders(response?.headers) || this.parseRetryFromErrorMessage(message);
+    const errorCode = errorJson?.error?.status
+      || errorJson?.error?.code
+      || errorJson?.status
+      || errorJson?.code
+      || null;
+    return {
+      ...base,
+      message,
+      ...(retryMs ? { resetsAtMs: Date.now() + retryMs } : {}),
+      ...(errorCode ? { errorCode: String(errorCode) } : {}),
+    };
+  }
+
   isTransientAntigravityError(status, message) {
     if (status === HTTP_STATUS.RATE_LIMITED) return true;
     if (ANTIGRAVITY_TRANSIENT_STATUSES.has(status)) return true;

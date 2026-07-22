@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { createErrorResult } from "../utils/error.js";
+import { createErrorResult, parseUpstreamError } from "../utils/error.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 
 // Build auth headers from sttConfig + token
@@ -24,16 +24,13 @@ function resolveAudioContentType(file) {
   return map[ext] || "application/octet-stream";
 }
 
-async function upstreamError(res) {
-  let txt = "";
-  try { txt = await res.text(); } catch {}
-  let msg = txt || `Upstream error (${res.status})`;
-  try { const j = JSON.parse(txt); msg = j?.error?.message || j?.error || j?.message || msg; } catch {}
-  return createErrorResult(res.status, typeof msg === "string" ? msg : JSON.stringify(msg));
+async function upstreamError(res, provider) {
+  const { statusCode, message, resetsAtMs, errorCode } = await parseUpstreamError(res, { provider });
+  return createErrorResult(statusCode, message, resetsAtMs, { errorCode });
 }
 
 // Deepgram: raw binary POST + model query param
-async function transcribeDeepgram(cfg, file, model, token, formData) {
+async function transcribeDeepgram(cfg, file, model, token, formData, provider) {
   const url = new URL(cfg.baseUrl);
   url.searchParams.set("model", model);
   url.searchParams.set("smart_format", "true");
@@ -48,20 +45,20 @@ async function transcribeDeepgram(cfg, file, model, token, formData) {
     headers: { ...buildAuthHeaders(cfg, token), "Content-Type": resolveAudioContentType(file) },
     body: buf,
   });
-  if (!res.ok) return upstreamError(res);
+  if (!res.ok) return upstreamError(res, provider);
   const data = await res.json();
   const text = data.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? "";
   return jsonResponse({ text });
 }
 
 // AssemblyAI: upload → submit → poll (max 120s)
-async function transcribeAssemblyAI(cfg, file, model, token) {
+async function transcribeAssemblyAI(cfg, file, model, token, provider) {
   const auth = buildAuthHeaders(cfg, token);
   const buf = await file.arrayBuffer();
   const up = await fetch("https://api.assemblyai.com/v2/upload", {
     method: "POST", headers: { ...auth, "Content-Type": "application/octet-stream" }, body: buf,
   });
-  if (!up.ok) return upstreamError(up);
+  if (!up.ok) return upstreamError(up, provider);
   const { upload_url } = await up.json();
 
   const sub = await fetch(cfg.baseUrl, {
@@ -69,7 +66,7 @@ async function transcribeAssemblyAI(cfg, file, model, token) {
     headers: { ...auth, "Content-Type": "application/json" },
     body: JSON.stringify({ audio_url: upload_url, speech_models: [model], language_detection: true }),
   });
-  if (!sub.ok) return upstreamError(sub);
+  if (!sub.ok) return upstreamError(sub, provider);
   const { id } = await sub.json();
 
   const start = Date.now();
@@ -85,18 +82,18 @@ async function transcribeAssemblyAI(cfg, file, model, token) {
 }
 
 // Nvidia NIM: multipart, normalize response
-async function transcribeNvidia(cfg, file, model, token) {
+async function transcribeNvidia(cfg, file, model, token, provider) {
   const fd = new FormData();
   fd.append("file", file, file.name || "audio.wav");
   fd.append("model", model);
   const res = await fetch(cfg.baseUrl, { method: "POST", headers: buildAuthHeaders(cfg, token), body: fd });
-  if (!res.ok) return upstreamError(res);
+  if (!res.ok) return upstreamError(res, provider);
   const data = await res.json();
   return jsonResponse({ text: data.text || data.transcript || "" });
 }
 
 // Gemini: generateContent with inline_data audio + transcription prompt
-async function transcribeGemini(cfg, file, model, token, formData) {
+async function transcribeGemini(cfg, file, model, token, formData, provider) {
   const buf = await file.arrayBuffer();
   const b64 = Buffer.from(buf).toString("base64");
   const mime = resolveAudioContentType(file);
@@ -115,14 +112,14 @@ async function transcribeGemini(cfg, file, model, token, formData) {
       contents: [{ parts: [{ text: promptText }, { inline_data: { mime_type: mime, data: b64 } }] }],
     }),
   });
-  if (!res.ok) return upstreamError(res);
+  if (!res.ok) return upstreamError(res, provider);
   const data = await res.json();
   const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text).filter(Boolean).join("") || "";
   return jsonResponse({ text });
 }
 
 // HuggingFace: POST raw binary to {baseUrl}/{model_id}
-async function transcribeHuggingFace(cfg, file, model, token) {
+async function transcribeHuggingFace(cfg, file, model, token, provider) {
   if (model.includes("..") || model.includes("//")) return createErrorResult(400, "Invalid model ID");
   const url = `${cfg.baseUrl.replace(/\/+$/, "")}/${model}`;
   const buf = await file.arrayBuffer();
@@ -131,13 +128,13 @@ async function transcribeHuggingFace(cfg, file, model, token) {
     headers: { ...buildAuthHeaders(cfg, token), "Content-Type": resolveAudioContentType(file) },
     body: buf,
   });
-  if (!res.ok) return upstreamError(res);
+  if (!res.ok) return upstreamError(res, provider);
   const data = await res.json();
   return jsonResponse({ text: data.text || "" });
 }
 
 // Default: OpenAI/Groq/Whisper-compatible multipart
-async function transcribeOpenAICompatible(cfg, file, model, token, formData) {
+async function transcribeOpenAICompatible(cfg, file, model, token, formData, provider) {
   const fd = new FormData();
   fd.append("file", file, file.name || "audio.wav");
   fd.append("model", model);
@@ -146,7 +143,7 @@ async function transcribeOpenAICompatible(cfg, file, model, token, formData) {
     if (v !== null && v !== undefined && v !== "") fd.append(k, v);
   }
   const res = await fetch(cfg.baseUrl, { method: "POST", headers: buildAuthHeaders(cfg, token), body: fd });
-  if (!res.ok) return upstreamError(res);
+  if (!res.ok) return upstreamError(res, provider);
   const ct = res.headers.get("content-type") || "application/json";
   const txt = await res.text();
   return { success: true, response: new Response(txt, { status: 200, headers: { "Content-Type": ct, "Access-Control-Allow-Origin": "*" } }) };
@@ -180,12 +177,12 @@ export async function handleSttCore({ provider, model, formData, credentials, st
 
   try {
     switch (cfg.format) {
-      case "deepgram":        return await transcribeDeepgram(cfg, file, model, token, formData);
-      case "assemblyai":      return await transcribeAssemblyAI(cfg, file, model, token);
-      case "nvidia-asr":      return await transcribeNvidia(cfg, file, model, token);
-      case "huggingface-asr": return await transcribeHuggingFace(cfg, file, model, token);
-      case "gemini-stt":      return await transcribeGemini(cfg, file, model, token, formData);
-      default:                return await transcribeOpenAICompatible(cfg, file, model, token, formData);
+      case "deepgram":        return await transcribeDeepgram(cfg, file, model, token, formData, provider);
+      case "assemblyai":      return await transcribeAssemblyAI(cfg, file, model, token, provider);
+      case "nvidia-asr":      return await transcribeNvidia(cfg, file, model, token, provider);
+      case "huggingface-asr": return await transcribeHuggingFace(cfg, file, model, token, provider);
+      case "gemini-stt":      return await transcribeGemini(cfg, file, model, token, formData, provider);
+      default:                return await transcribeOpenAICompatible(cfg, file, model, token, formData, provider);
     }
   } catch (err) {
     return createErrorResult(HTTP_STATUS.BAD_GATEWAY, err.message || "STT request failed");

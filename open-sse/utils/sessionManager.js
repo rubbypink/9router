@@ -92,7 +92,7 @@ const MAX_ASSISTANT_SESSIONS = 5000;
 const MAX_CONTINUATION_SESSIONS = 5000;
 
 // Client headers/body fields that carry an upstream session id (priority order)
-const SESSION_HEADER_KEYS = ["x-session-id", "session-id", "session_id", "x-amp-thread-id"];
+const SESSION_HEADER_KEYS = ["thread-id", "x-session-id", "session-id", "session_id", "x-amp-thread-id"];
 const CLAUDE_CODE_SESSION_RE = /_session_([a-f0-9-]+)$/;
 
 function sha16(text) {
@@ -135,11 +135,15 @@ function extractAntigravitySession(body) {
 }
 
 function extractClientSessionId(headers, body, scope = "") {
+    const codexThread = headerValue(headers, "thread-id");
+    if (codexThread) return codexThread;
+    const metadataThread = normalizeSessionId(body?.client_metadata?.thread_id);
+    if (metadataThread) return metadataThread;
     const claude = extractClaudeCodeSession(body?.metadata?.user_id);
     if (claude) return `claude:${claude}`;
     const antigravity = extractAntigravitySession(body);
     if (antigravity) return `antigravity:${antigravity}`;
-    for (const key of SESSION_HEADER_KEYS) {
+    for (const key of SESSION_HEADER_KEYS.slice(1)) {
         const v = headerValue(headers, key);
         if (v) return v;
     }

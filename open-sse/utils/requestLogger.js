@@ -3,6 +3,7 @@ const isNode = typeof process !== "undefined" && process.versions?.node && typeo
 
 // Check if logging is enabled via environment variable (default: false)
 const LOGGING_ENABLED = typeof process !== "undefined" && process.env?.ENABLE_REQUEST_LOGS === 'true';
+const LOG_BODY_ENABLED = typeof process !== "undefined" && process.env?.ENABLE_REQUEST_LOG_BODIES === 'true';
 
 let fs = null;
 let path = null;
@@ -69,25 +70,37 @@ function writeJsonFile(sessionPath, filename, data) {
   }
 }
 
-// Mask sensitive data in headers (DISABLED - keep full token for testing)
-function maskSensitiveHeaders(headers) {
+export function maskSensitiveHeaders(headers) {
   if (!headers) return {};
-  return { ...headers };
-  
-  // Old masking code (disabled):
-  // const masked = { ...headers };
-  // const sensitiveKeys = ["authorization", "x-api-key", "cookie", "token"];
-  // 
-  // for (const key of Object.keys(masked)) {
-  //   const lowerKey = key.toLowerCase();
-  //   if (sensitiveKeys.some(sk => lowerKey.includes(sk))) {
-  //     const value = masked[key];
-  //     if (value && value.length > 20) {
-  //       masked[key] = value.slice(0, 10) + "..." + value.slice(-5);
-  //     }
-  //   }
-  // }
-  // return masked;
+  const normalized = typeof headers.entries === "function"
+    ? Object.fromEntries(headers.entries())
+    : headers;
+  const masked = { ...normalized };
+  const sensitiveKeys = ["authorization", "x-api-key", "cookie", "token", "secret"];
+  for (const key of Object.keys(masked)) {
+    if (sensitiveKeys.some((sensitive) => key.toLowerCase().includes(sensitive))) {
+      masked[key] = "[REDACTED]";
+    }
+  }
+  return masked;
+}
+
+export function safeLogPayload(value) {
+  if (LOG_BODY_ENABLED || value == null) return value;
+  if (typeof value === "string") {
+    return { redacted: true, type: "string", length: value.length };
+  }
+  if (Array.isArray(value)) {
+    return { redacted: true, type: "array", length: value.length };
+  }
+  if (typeof value === "object") {
+    return {
+      redacted: true,
+      type: "object",
+      keys: Object.keys(value).slice(0, 50),
+    };
+  }
+  return { redacted: true, type: typeof value };
 }
 
 // No-op logger when logging is disabled
@@ -132,7 +145,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
         timestamp: new Date().toISOString(),
         endpoint,
         headers: maskSensitiveHeaders(headers),
-        body
+        body: safeLogPayload(body)
       });
     },
     
@@ -141,7 +154,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
       writeJsonFile(sessionPath, "2_req_source.json", {
         timestamp: new Date().toISOString(),
         headers: maskSensitiveHeaders(headers),
-        body
+        body: safeLogPayload(body)
       });
     },
     
@@ -149,7 +162,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
     logOpenAIRequest(body) {
       writeJsonFile(sessionPath, "3_req_openai.json", {
         timestamp: new Date().toISOString(),
-        body
+        body: safeLogPayload(body)
       });
     },
     
@@ -159,7 +172,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
         timestamp: new Date().toISOString(),
         url,
         headers: maskSensitiveHeaders(headers),
-        body
+        body: safeLogPayload(body)
       });
     },
     
@@ -170,13 +183,14 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
         timestamp: new Date().toISOString(),
         status,
         statusText,
-        headers: headers ? (typeof headers.entries === "function" ? Object.fromEntries(headers.entries()) : headers) : {},
-        body
+        headers: maskSensitiveHeaders(headers),
+        body: safeLogPayload(body)
       });
     },
     
     // 5. Append streaming chunk to provider response
     appendProviderChunk(chunk) {
+      if (!LOG_BODY_ENABLED) return;
       if (!fs || !sessionPath) return;
       try {
         const filePath = path.join(sessionPath, "5_res_provider.txt");
@@ -188,6 +202,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
     
     // 6. Append OpenAI intermediate chunks (target → openai)
     appendOpenAIChunk(chunk) {
+      if (!LOG_BODY_ENABLED) return;
       if (!fs || !sessionPath) return;
       try {
         const filePath = path.join(sessionPath, "6_res_openai.txt");
@@ -201,12 +216,13 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
     logConvertedResponse(body) {
       writeJsonFile(sessionPath, "7_res_client.json", {
         timestamp: new Date().toISOString(),
-        body
+        body: safeLogPayload(body)
       });
     },
     
     // 7. Append streaming chunk to converted response
     appendConvertedChunk(chunk) {
+      if (!LOG_BODY_ENABLED) return;
       if (!fs || !sessionPath) return;
       try {
         const filePath = path.join(sessionPath, "7_res_client.txt");
@@ -222,7 +238,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
         timestamp: new Date().toISOString(),
         error: error?.message || String(error),
         stack: error?.stack,
-        requestBody
+        requestBody: safeLogPayload(requestBody)
       });
     }
   };

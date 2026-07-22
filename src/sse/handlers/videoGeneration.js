@@ -160,7 +160,13 @@ export async function handleVideoCreate(request, action) {
 
     // Record the failure (dashboard shows lastError/errorCode → user sees re-auth is needed)
     const { shouldFallback } = await markAccountUnavailable(
-      credentials.connectionId, result.status, sanitizeSecrets(result.error, refreshedCredentials), provider, model
+      credentials.connectionId,
+      result.status,
+      sanitizeSecrets(result.error, refreshedCredentials),
+      provider,
+      model,
+      result.resetsAtMs,
+      { errorCode: result.errorCode },
     );
 
     if (shouldFallback && CREATE_ROTATION_STATUSES.has(result.status)) {
@@ -217,7 +223,13 @@ export async function handleVideoGet(request, requestId) {
   }
 
   await markAccountUnavailable(
-    credentials.connectionId, result.status, sanitizeSecrets(result.error, refreshedCredentials), provider, null
+    credentials.connectionId,
+    result.status,
+    sanitizeSecrets(result.error, refreshedCredentials),
+    provider,
+    null,
+    result.resetsAtMs,
+    { errorCode: result.errorCode },
   );
   return result.response;
 }

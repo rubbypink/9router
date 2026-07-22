@@ -96,10 +96,10 @@ export async function handleEmbeddingsCore({
   }
 
   if (!providerResponse.ok) {
-    const { statusCode, message } = await parseUpstreamError(providerResponse);
+    const { statusCode, message, resetsAtMs, errorCode } = await parseUpstreamError(providerResponse, { provider });
     const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
     log?.debug?.("EMBEDDINGS", `Provider error: ${errMsg}`);
-    return createErrorResult(statusCode, errMsg);
+    return createErrorResult(statusCode, errMsg, resetsAtMs, { errorCode });
   }
 
   let responseBody;

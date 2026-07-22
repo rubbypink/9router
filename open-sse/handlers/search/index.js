@@ -10,6 +10,7 @@
 import { buildSearchRequest } from "./callers.js";
 import { normalizeSearchResponse } from "./normalizers.js";
 import { handleChatSearch } from "./chatSearch.js";
+import { parseUpstreamError } from "../../utils/error.js";
 
 const GLOBAL_TIMEOUT_MS = 15000;
 const NON_RETRIABLE = new Set([400, 401, 403, 404]);
@@ -43,11 +44,13 @@ function jsonResponse(payload, status = 200) {
 }
 
 /** Wrap an error result with a Response object so the auth wrapper can return it directly. */
-function errorResult(status, error) {
+function errorResult(status, error, failure = {}) {
   return {
     success: false,
     status,
     error,
+    resetsAtMs: failure.resetsAtMs,
+    errorCode: failure.errorCode || null,
     response: jsonResponse({ error: { message: error, code: status } }, status)
   };
 }
@@ -103,9 +106,15 @@ async function tryDedicatedProvider({ provider, providerConfig, body, credential
     const resp = await fetch(url, { ...init, headers: sanitizeHeaders(init.headers), signal: controller.signal });
     clearTimeout(timer);
     if (!resp.ok) {
-      const errText = await resp.text().catch(() => "");
-      log?.error?.("SEARCH", `${provider.id} ${resp.status}: ${errText.slice(0, 200)}`);
-      return { success: false, status: resp.status, error: `${provider.id} returned ${resp.status}: ${errText.slice(0, 200)}` };
+      const parsed = await parseUpstreamError(resp, { provider: provider.id });
+      log?.error?.("SEARCH", `${provider.id} ${parsed.statusCode}: ${parsed.message.slice(0, 200)}`);
+      return {
+        success: false,
+        status: parsed.statusCode,
+        error: `${provider.id} returned ${parsed.statusCode}: ${parsed.message.slice(0, 200)}`,
+        resetsAtMs: parsed.resetsAtMs,
+        errorCode: parsed.errorCode,
+      };
     }
     const data = await resp.json();
     const normalized = normalizeSearchResponse(provider.id, data, params.query, params.searchType);
@@ -197,5 +206,5 @@ export async function handleSearchCore({ body, provider, providerConfig, credent
     if (fallback.success) return successResult(fallback.data);
   }
 
-  return errorResult(result.status || 502, result.error || "Search failed");
+  return errorResult(result.status || 502, result.error || "Search failed", result);
 }

@@ -20,6 +20,7 @@ const EXCLUDE_PATTERNS = [
   ".env",           // Environment files
   ".env.local",
   ".env.*.local",
+  ".build-home",
   "*.log",          // Log files
   "tmp",            // Temp files
   ".DS_Store",      // macOS files
@@ -154,6 +155,18 @@ if (!fs.existsSync(standaloneApp)) {
 }
 copyRecursive(standaloneApp, cliAppDir);
 
+const tracedNextPath = path.join(standaloneApp, "node_modules", "next");
+if (fs.existsSync(tracedNextPath)) {
+  const tracedNextPeerDir = path.dirname(fs.realpathSync(tracedNextPath));
+  copyRecursive(tracedNextPeerDir, path.join(cliAppDir, "node_modules"));
+}
+
+const tracedBuildHome = path.join(cliAppDir, "cli", ".build-home");
+if (fs.existsSync(tracedBuildHome)) {
+  console.error("❌ Refusing to package traced .build-home runtime state");
+  process.exit(1);
+}
+
 // Older nested-app layout stores traced node_modules at standalone root.
 const standaloneNodeModules = path.join(standaloneRootToUse, "node_modules");
 if (standaloneApp !== standaloneRootToUse && fs.existsSync(standaloneNodeModules)) {
@@ -195,6 +208,13 @@ function ensureModuleInBundle(pkg) {
   console.log(`✅ Bundled ${pkg}`);
 }
 ensureModuleInBundle("sql.js");
+for (const runtimeModule of ["@next/env", "@swc/helpers", "next"]) {
+  const runtimePackage = path.join(cliAppDir, "node_modules", runtimeModule, "package.json");
+  if (!fs.existsSync(runtimePackage)) {
+    console.error(`❌ Required runtime module missing from CLI bundle: ${runtimeModule}`);
+    process.exit(1);
+  }
+}
 const betterDir = path.join(cliAppDir, "node_modules", "better-sqlite3");
 if (fs.existsSync(betterDir)) {
   fs.rmSync(betterDir, { recursive: true, force: true });

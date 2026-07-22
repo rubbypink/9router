@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { throwUpstreamError } from "./_base.js";
 
 function hexToBase64(audioHex) {
   const clean = typeof audioHex === "string" ? audioHex.trim() : "";
@@ -10,7 +11,7 @@ function hexToBase64(audioHex) {
 }
 
 // MiniMax T2A HTTP: returns hex-encoded audio in non-streaming mode.
-export default async function minimaxTts({ baseUrl, apiKey, text, modelId, voiceId }) {
+export default async function minimaxTts({ provider, baseUrl, apiKey, text, modelId, voiceId }) {
   const res = await fetch(baseUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
@@ -46,7 +47,8 @@ export default async function minimaxTts({ baseUrl, apiKey, text, modelId, voice
   const statusMessage = baseResp.status_msg || baseResp.statusMsg || data.message || "";
 
   if (!res.ok) {
-    throw new Error(statusMessage || rawText || `MiniMax TTS error (${res.status})`);
+    const replay = new Response(rawText, { status: res.status, headers: res.headers });
+    await throwUpstreamError(replay, provider);
   }
   if (statusCode !== 0) {
     throw new Error(statusMessage || "MiniMax TTS upstream error");

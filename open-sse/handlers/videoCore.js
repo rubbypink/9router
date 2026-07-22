@@ -1,4 +1,4 @@
-import { createErrorResult } from "../utils/error.js";
+import { createErrorResult, parseUpstreamError } from "../utils/error.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { refreshTokenByProvider } from "../services/tokenRefresh.js";
 import { PROVIDER_MEDIA } from "../providers/index.js";
@@ -145,12 +145,13 @@ export async function handleVideoProxyCore({
     }
   }
 
-  const bodyText = await upstream.text().catch(() => "");
-
   if (!upstream.ok) {
-    const message = sanitizeSecrets(bodyText || `HTTP ${upstream.status}`, credentials);
-    return createErrorResult(upstream.status, `[${provider}] ${message.slice(0, 2000)}`);
+    const { statusCode, message, resetsAtMs, errorCode } = await parseUpstreamError(upstream, { provider });
+    const safeMessage = sanitizeSecrets(message || `HTTP ${statusCode}`, credentials);
+    return createErrorResult(statusCode, `[${provider}] ${safeMessage.slice(0, 2000)}`, resetsAtMs, { errorCode });
   }
+
+  const bodyText = await upstream.text().catch(() => "");
 
   // Success: pass the upstream JSON through untouched (request_id / status / video.url).
   return {

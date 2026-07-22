@@ -1,8 +1,8 @@
-import { ERROR_RULES, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS } from "../config/errorConfig.js";
+import { ERROR_RULES, BACKOFF_CONFIG } from "../config/errorConfig.js";
 
 /**
  * Calculate exponential backoff cooldown for rate limits (429)
- * Level 1: 1s, Level 2: 2s, Level 3: 4s... → max 4 min
+ * Level 1: 2s, Level 2: 4s, Level 3: 8s... → max 5 min
  * @param {number} backoffLevel - Current backoff level
  * @returns {number} Cooldown in milliseconds
  */
@@ -24,6 +24,10 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
   const lowerError = errorText
     ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase()
     : "";
+  const retryableClientStatuses = new Set([401, 402, 403, 404, 408, 429]);
+  if (Number.isInteger(status) && status >= 400 && status < 500 && !retryableClientStatuses.has(status)) {
+    return { shouldFallback: false, cooldownMs: 0 };
+  }
 
   for (const rule of ERROR_RULES) {
     // Text-based rule: match substring in error message
@@ -45,8 +49,7 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
     }
   }
 
-  // Default: transient cooldown for any unmatched error
-  return { shouldFallback: true, cooldownMs: TRANSIENT_COOLDOWN_MS };
+  return { shouldFallback: false, cooldownMs: 0 };
 }
 
 /**

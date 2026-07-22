@@ -1,6 +1,8 @@
 // Web Fetch handler — dispatches to firecrawl, jina-reader, tavily, exa
 // Returns normalized shape across all providers
 
+import { parseUpstreamError } from "../../utils/error.js";
+
 const DEFAULT_TIMEOUT_MS = 15000;
 const DEFAULT_FORMAT = "markdown";
 
@@ -134,10 +136,11 @@ async function runFirecrawl({ url, fmt, timeoutMs, apiKey, maxCharacters, costPe
     return { success: false, status: r.timeout ? 504 : 502, error: r.error };
   }
   const upstreamMs = Date.now() - upstreamStart;
-  const { json } = await readJsonOrText(r.res);
   if (!r.res.ok) {
-    return { success: false, status: r.res.status, error: json?.error || `Firecrawl error: ${r.res.status}` };
+    const parsed = await parseUpstreamError(r.res, { provider: "firecrawl" });
+    return { success: false, status: parsed.statusCode, error: parsed.message, resetsAtMs: parsed.resetsAtMs, errorCode: parsed.errorCode };
   }
+  const { json } = await readJsonOrText(r.res);
   const d = json?.data || {};
   const text = truncate(d.markdown || d.html || d.text || "", maxCharacters);
   const title = d.metadata?.title || null;
@@ -162,10 +165,11 @@ async function runJina({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuer
     return { success: false, status: r.timeout ? 504 : 502, error: r.error };
   }
   const upstreamMs = Date.now() - upstreamStart;
-  const body = await r.res.text();
   if (!r.res.ok) {
-    return { success: false, status: r.res.status, error: body?.slice(0, 500) || `Jina error: ${r.res.status}` };
+    const parsed = await parseUpstreamError(r.res, { provider: "jina-reader" });
+    return { success: false, status: parsed.statusCode, error: parsed.message, resetsAtMs: parsed.resetsAtMs, errorCode: parsed.errorCode };
   }
+  const body = await r.res.text();
   const text = truncate(body, maxCharacters);
   return {
     success: true,
@@ -191,10 +195,11 @@ async function runTavily({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQu
     return { success: false, status: r.timeout ? 504 : 502, error: r.error };
   }
   const upstreamMs = Date.now() - upstreamStart;
-  const { json } = await readJsonOrText(r.res);
   if (!r.res.ok) {
-    return { success: false, status: r.res.status, error: json?.error || `Tavily error: ${r.res.status}` };
+    const parsed = await parseUpstreamError(r.res, { provider: "tavily" });
+    return { success: false, status: parsed.statusCode, error: parsed.message, resetsAtMs: parsed.resetsAtMs, errorCode: parsed.errorCode };
   }
+  const { json } = await readJsonOrText(r.res);
   const first = json?.results?.[0] || {};
   const text = truncate(first.raw_content || "", maxCharacters);
   return {
@@ -221,10 +226,11 @@ async function runExa({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuery
     return { success: false, status: r.timeout ? 504 : 502, error: r.error };
   }
   const upstreamMs = Date.now() - upstreamStart;
-  const { json } = await readJsonOrText(r.res);
   if (!r.res.ok) {
-    return { success: false, status: r.res.status, error: json?.error || `Exa error: ${r.res.status}` };
+    const parsed = await parseUpstreamError(r.res, { provider: "exa" });
+    return { success: false, status: parsed.statusCode, error: parsed.message, resetsAtMs: parsed.resetsAtMs, errorCode: parsed.errorCode };
   }
+  const { json } = await readJsonOrText(r.res);
   const first = json?.results?.[0] || {};
   const text = truncate(first.text || "", maxCharacters);
   return {

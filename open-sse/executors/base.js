@@ -3,6 +3,7 @@ import { shouldRefreshCredentials } from "../services/oauthCredentialManager.js"
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { dbg } from "../utils/debugLog.js";
 import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE } from "../providers/shared.js";
+import { isUpstreamExecutionControlError } from "../services/requestExecutionState.js";
 
 /**
  * BaseExecutor - Base class for provider executors
@@ -162,6 +163,7 @@ export class BaseExecutor {
         return { response, url, headers, transformedBody };
       } catch (error) {
         clearTimeout(connectTimer);
+        if (isUpstreamExecutionControlError(error)) throw error;
         lastError = error;
         const isConnectTimeout = connectCtrl.signal.aborted && error.name === "AbortError";
         dbg("FETCH", `${this.provider.toUpperCase()} ✖ ${error.name}: ${error.message}${isConnectTimeout ? " (connect timeout)" : ""}`);
