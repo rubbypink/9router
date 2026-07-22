@@ -1,6 +1,6 @@
 {
   "name": "9router-app",
-  "version": "0.5.40",
+  "version": "0.5.40-9trip.1",
   "description": "9Router web dashboard",
   "private": true,
   "scripts": {
@@ -12,7 +12,10 @@
     "build:bun": "bun --bun next build --webpack",
     "start:bun": "bun ./.next/standalone/server.js",
     "cli:pack": "npm --prefix cli run pack:cli",
-    "cli:publish": "npm --prefix cli run publish:cli"
+    "cli:publish": "npm --prefix cli run publish:cli",
+    "release:install": "node cli/scripts/release-cli.js install",
+    "release:activate": "node cli/scripts/release-cli.js activate",
+    "release:rollback": "node cli/scripts/release-cli.js rollback"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

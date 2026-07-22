@@ -557,3 +557,29 @@ Environment variables actively used by code:
 - `GET /api/settings`
 - `GET /api/v1/models`
 - CLI target base URL should be `http://<host>:20128/v1` when `PORT=20128`
+
+## Immutable Custom Release
+
+The approved gateway release is package `0.5.40-9trip.1` on upstream `0.5.40`
+with routing contract `session-affinity/v2`. Build its archive with
+`npm run cli:pack`; it produces `9router-0.5.40-9trip.1.tgz` at the repository
+root. The release CLI never invokes global package updates or modifies a global
+`9router` binary.
+
+- `npm run release:install` extracts and validates that exact archive into
+  `$HOME/.local/share/9router/releases/0.5.40-9trip.1` without overwriting an
+  existing release.
+- `npm run release:activate` validates the current and target releases, writes
+  a SQLite/WAL/SHM snapshot, persists a prepared activation record, atomically
+  switches `$HOME/.local/share/9router/current`, then finalizes that record.
+  A prepared record remains recoverable if finalization fails after the switch.
+- `npm run release:rollback` validates the recorded compatible releases,
+  atomically returns `current` to the previous release, then restores the
+  recorded database snapshot. A restore failure compensates by returning to
+  the active release and restoring a pre-rollback database snapshot.
+
+Each release contains `release.json` with the immutable routing, upstream,
+custom revision, package, and release-contained CLI path. `/api/health` reports
+the same routing/upstream/custom fields plus affinity schema `3` and a
+key-free affinity status snapshot. For isolated tests, pass an absolute
+`--release-root` or set `NINEROUTER_RELEASE_ROOT` to a temporary directory.
