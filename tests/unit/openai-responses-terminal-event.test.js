@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { FORMATS } from "../../open-sse/translator/formats.js";
-import { createSSETransformStreamWithLogger } from "../../open-sse/utils/stream.js";
+import { createPassthroughStreamWithLogger, createSSETransformStreamWithLogger } from "../../open-sse/utils/stream.js";
 
 async function runTransform(input) {
   let completedSuccessfully = null;
@@ -41,6 +41,33 @@ async function runTransform(input) {
 
   text += decoder.decode();
   return { text, completedSuccessfully };
+}
+
+async function runChatPassthrough(input) {
+  let completedSuccessfully = null;
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode(input));
+      controller.close();
+    },
+  });
+
+  const output = stream.pipeThrough(
+    createPassthroughStreamWithLogger(
+      "openai-compatible",
+      null,
+      "test-model",
+      null,
+      null,
+      (_content, _usage, _ttftAt, succeeded) => {
+        completedSuccessfully = succeeded;
+      },
+    ),
+  );
+
+  await new Response(output).text();
+  return completedSuccessfully;
 }
 
 describe("OpenAI Responses streaming termination", () => {
@@ -115,5 +142,16 @@ describe("OpenAI Responses streaming termination", () => {
     expect(output.match(/data: \[DONE\]/g)).toHaveLength(1);
     expect(output).not.toContain("data: null");
     expect(completedSuccessfully).toBe(false);
+  });
+});
+
+describe("OpenAI-compatible Chat Completions termination", () => {
+  it("treats clean provider EOF as completion without requiring finish_reason", async () => {
+    const completedSuccessfully = await runChatPassthrough([
+      `data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: "checking" }, finish_reason: null }] })}`,
+      "",
+    ].join("\n"));
+
+    expect(completedSuccessfully).toBe(true);
   });
 });

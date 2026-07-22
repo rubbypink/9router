@@ -72,7 +72,6 @@ export function createSSEStream(options = {}) {
   let openAIResponsesTerminalSeen = false;
   let openAIResponsesDoneSent = false;
   let streamDoneSent = false;  // track duplicate [DONE] across transform + flush
-  let successfulTerminalSeen = false;
   let streamErrorSeen = false;
 
   return new TransformStream({
@@ -104,10 +103,6 @@ export function createSSEStream(options = {}) {
         if (mode === STREAM_MODE.PASSTHROUGH) {
           let output;
           let injectedUsage = false;
-
-          if (trimmed === "data: [DONE]" && !streamErrorSeen) {
-            successfulTerminalSeen = true;
-          }
 
           if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
             try {
@@ -174,7 +169,6 @@ export function createSSEStream(options = {}) {
               }
 
               const isFinishChunk = parsed.choices?.[0]?.finish_reason;
-              if (isFinishChunk) successfulTerminalSeen = true;
               if (isFinishChunk && !hasValidUsage(parsed.usage)) {
                 const estimated = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
                 parsed.usage = filterUsageForFormat(estimated, FORMATS.OPENAI);
@@ -226,9 +220,7 @@ export function createSSEStream(options = {}) {
 
         if (isOpenAIResponsesStream && isOpenAIResponsesTerminalEvent(openAIResponsesEventName, parsed)) {
           openAIResponsesTerminalSeen = true;
-          if (isOpenAIResponsesSuccessfulTerminalEvent(openAIResponsesEventName, parsed)) {
-            successfulTerminalSeen = true;
-          } else {
+          if (!isOpenAIResponsesSuccessfulTerminalEvent(openAIResponsesEventName, parsed)) {
             streamErrorSeen = true;
           }
         }
@@ -254,7 +246,6 @@ export function createSSEStream(options = {}) {
           }
           streamDoneSent = true;
           if (keepsOpenAIResponsesFormat) openAIResponsesDoneSent = true;
-          if (!streamErrorSeen) successfulTerminalSeen = true;
           continue;
         }
 
@@ -395,7 +386,7 @@ export function createSSEStream(options = {}) {
             onStreamComplete({
               content: accumulatedContent,
               thinking: accumulatedThinking
-            }, usage, ttftAt, successfulTerminalSeen && !streamErrorSeen);
+            }, usage, ttftAt, !streamErrorSeen);
           }
           return;
         }
@@ -411,7 +402,6 @@ export function createSSEStream(options = {}) {
               openAIResponsesTerminalSeen = true;
               streamErrorSeen = true;
             }
-            if (!streamErrorSeen) successfulTerminalSeen = true;
           }
           if (parsed && !parsed.done) {
             const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
@@ -483,7 +473,7 @@ export function createSSEStream(options = {}) {
           onStreamComplete({
             content: accumulatedContent,
             thinking: accumulatedThinking
-          }, state?.usage, ttftAt, successfulTerminalSeen && !streamErrorSeen);
+          }, state?.usage, ttftAt, !streamErrorSeen);
         }
       } catch (error) {
         console.log("Error in flush:", error);
