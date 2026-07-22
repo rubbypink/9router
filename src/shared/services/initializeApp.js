@@ -3,6 +3,7 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { existsSync } from "fs";
 import { cleanupProviderConnections, getSettings, updateSettings, getApiKeys } from "@/lib/localDb";
+import { reconcileAccountHealth } from "@/sse/services/auth.js";
 import {
   enableTunnel, enableTailscale,
   isTunnelManuallyDisabled, isTunnelReconnecting, isTailscaleReconnecting,
@@ -81,6 +82,11 @@ export async function initializeApp() {
 
 async function runHeavyStartup() {
   await cleanupProviderConnections();
+  try {
+    await reconcileAccountHealth();
+  } catch (error) {
+    console.warn("[InitApp] Account health reconciliation failed:", error.message);
+  }
   const settings = await getSettings();
 
   // Auto-resume tunnel (once per process)

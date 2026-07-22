@@ -22,6 +22,15 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import { resolveThreadIdentity } from "open-sse/utils/threadIdentity.js";
+import {
+  isCodexThreadAffinityEnabled,
+  threadRouteCoordinator,
+} from "open-sse/services/threadRouteCoordinator.js";
+import {
+  createUpstreamRequestState,
+  runWithUpstreamRequestState,
+} from "open-sse/services/requestExecutionState.js";
 
 /**
  * Handle chat completion request
@@ -86,55 +95,88 @@ export async function handleChat(request, clientRawRequest = null) {
   const bypassResponse = handleBypassRequest(body, modelStr, userAgent, !!settings.ccFilterNaming);
   if (bypassResponse) return bypassResponse.response || bypassResponse;
 
-  // Check if model is a combo (has multiple models with fallback)
-  const comboModels = await getComboModels(modelStr);
-  if (comboModels) {
-    // Check for combo-specific strategy first, fallback to global
-    const comboStrategies = settings.comboStrategies || {};
-    const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
-    const comboStrategy = comboSpecificStrategy || settings.comboStrategy || "fallback";
+  const dispatch = async (routeContext = null) => {
+    const comboModels = await getComboModels(modelStr);
+    if (comboModels) {
+      const comboStrategies = settings.comboStrategies || {};
+      const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
+      const comboStrategy = comboSpecificStrategy || settings.comboStrategy || "fallback";
 
-    if (comboStrategy === "fusion") {
-      log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: fusion)`);
-      return handleFusionChat({
+      if (comboStrategy === "fusion") {
+        if (routeContext) {
+          return errorResponse(409, "Fusion combos are incompatible with Codex thread affinity");
+        }
+        log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: fusion)`);
+        return handleFusionChat({
+          body,
+          models: comboModels,
+          handleSingleModel: (b, m, isPanel) => {
+            let cleanRawReq = clientRawRequest;
+            if (isPanel && clientRawRequest) {
+              const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
+              cleanRawReq = { ...clientRawRequest, body: cleanBody };
+            }
+            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, null);
+          },
+          log,
+          comboName: modelStr,
+          judgeModel: comboStrategies[modelStr]?.judgeModel,
+          tuning: comboStrategies[modelStr]?.fusionTuning,
+        });
+      }
+
+      const comboStickyLimit = settings.comboStickyRoundRobinLimit;
+      log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
+      return handleComboChat({
         body,
         models: comboModels,
-        handleSingleModel: (b, m, isPanel) => {
-          let cleanRawReq = clientRawRequest;
-          if (isPanel && clientRawRequest) {
-            const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
-            cleanRawReq = { ...clientRawRequest, body: cleanBody };
-          }
-          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
-        },
+        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, routeContext),
         log,
         comboName: modelStr,
-        judgeModel: comboStrategies[modelStr]?.judgeModel,
-        tuning: comboStrategies[modelStr]?.fusionTuning,
+        comboStrategy,
+        comboStickyLimit,
+        preferredModel: routeContext?.binding?.model || null,
+        onEligibleFallback: () => {
+          if (routeContext) routeContext.allowRebind = true;
+        },
+        onRequiredTransportRebind: () => {
+          if (routeContext) routeContext.allowRebind = true;
+        },
       });
     }
 
-    const comboStickyLimit = settings.comboStickyRoundRobinLimit;
-    log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
-    return handleComboChat({
-      body,
-      models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
-      log,
-      comboName: modelStr,
-      comboStrategy,
-      comboStickyLimit
-    });
-  }
+    return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey, routeContext);
+  };
 
-  // Single model request
-  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey);
+  return runWithUpstreamRequestState(createUpstreamRequestState(), async () => {
+    if (!isCodexThreadAffinityEnabled()) return dispatch();
+
+    try {
+      const identity = resolveThreadIdentity({ headers: request.headers, body });
+      if (!identity) return dispatch();
+      return await threadRouteCoordinator.run(identity.threadKey, modelStr, (binding) => dispatch({
+        coordinator: threadRouteCoordinator,
+        threadKey: identity.threadKey,
+        requestedModel: modelStr,
+        binding,
+        allowRebind: false,
+      }));
+    } catch (error) {
+      const status = Number.isInteger(error?.status) ? error.status : 500;
+      log.warn("THREAD", error?.code || "thread_route_error");
+      return errorResponse(
+        status,
+        error?.message || "Codex thread routing failed",
+        error?.code || "thread_route_error",
+      );
+    }
+  });
 }
 
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, routeContext = null) {
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
@@ -148,6 +190,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       const comboStrategy = comboSpecificStrategy || chatSettings.comboStrategy || "fallback";
 
       if (comboStrategy === "fusion") {
+        if (routeContext) {
+          return errorResponse(409, "Fusion combos are incompatible with Codex thread affinity");
+        }
         log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: fusion)`);
         return handleFusionChat({
           body,
@@ -158,7 +203,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
               const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
               cleanRawReq = { ...clientRawRequest, body: cleanBody };
             }
-            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
+            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, null);
           },
           log,
           comboName: modelStr,
@@ -172,11 +217,18 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       return handleComboChat({
         body,
         models: comboModels,
-        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, routeContext),
         log,
         comboName: modelStr,
         comboStrategy,
-        comboStickyLimit
+        comboStickyLimit,
+        preferredModel: routeContext?.binding?.model || null,
+        onEligibleFallback: () => {
+          if (routeContext) routeContext.allowRebind = true;
+        },
+        onRequiredTransportRebind: () => {
+          if (routeContext) routeContext.allowRebind = true;
+        },
       });
     }
     log.warn("CHAT", "Invalid model format", { model: modelStr });
@@ -194,9 +246,16 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   const excludeConnectionIds = new Set();
   let lastError = null;
   let lastStatus = null;
+  const resolvedRouteModel = `${provider}/${model}`;
+  if (routeContext?.binding && !routeContext.allowRebind && routeContext.binding.resolvedModel !== resolvedRouteModel) {
+    return errorResponse(409, "Pinned model route is no longer available");
+  }
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const preferredConnectionId = !routeContext?.allowRebind && routeContext?.binding?.resolvedModel === resolvedRouteModel
+      ? routeContext.binding.connectionId
+      : null;
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId });
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
@@ -212,6 +271,28 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       }
       log.warn("CHAT", "No more accounts available", { provider });
       return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
+    }
+
+    if (preferredConnectionId && credentials.connectionId !== preferredConnectionId) {
+      return errorResponse(409, "Pinned account route is no longer available");
+    }
+
+    const selectedRoute = {
+      model: modelStr,
+      resolvedModel: resolvedRouteModel,
+      connectionId: credentials.connectionId,
+    };
+    if (routeContext) {
+      try {
+        routeContext.coordinator.bindRoute(
+          routeContext.threadKey,
+          routeContext.requestedModel,
+          selectedRoute,
+          { allowRebind: routeContext.allowRebind },
+        );
+      } catch (error) {
+        return errorResponse(error.status || 409, error.message, error.code);
+      }
     }
 
     // Account selection shown in the unified "▶" line (acc:...)
@@ -265,16 +346,32 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         });
       },
       onRequestSuccess: async () => {
+        if (routeContext) {
+          routeContext.coordinator.markSuccess(
+            routeContext.threadKey,
+            routeContext.requestedModel,
+            selectedRoute,
+          );
+        }
         await clearAccountError(credentials.connectionId, credentials, model);
       }
     });
 
-    if (result.success) return result.response;
+    if (result.success || result.routingFailure) return result.response;
 
     // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
-    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);
+    const { shouldFallback } = await markAccountUnavailable(
+      credentials.connectionId,
+      result.status,
+      result.error,
+      provider,
+      model,
+      result.resetsAtMs,
+      { errorCode: result.errorCode },
+    );
 
     if (shouldFallback) {
+      if (routeContext) routeContext.allowRebind = true;
       log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} UNAVAILABLE (${result.status}) → NEXT ACCOUNT`);
       excludeConnectionIds.add(credentials.connectionId);
       lastError = result.error;

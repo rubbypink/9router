@@ -6,6 +6,7 @@ import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
+import { resolveProviderAlias } from "./model.js";
 
 // Hard capabilities = input modalities; missing one drops request data (e.g. image
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
@@ -14,6 +15,22 @@ const HARD_CAPS = new Set(["vision", "pdf", "audioInput", "videoInput"]);
 // Prefixes used when flattening tool turns into plain prose for panel models.
 const TOOL_CALL_PREFIX = "[Called tools: ";
 const TOOL_RESULT_PREFIX = "[Tool result: ";
+
+export function hasOpaqueResponsesContent(body) {
+  if (!Array.isArray(body?.input)) return false;
+  return body.input.some((item) => {
+    if (!item || typeof item !== "object") return false;
+    const blocks = [item.content, item.output].filter(Array.isArray);
+    return blocks.some((content) => content.some((block) => block?.type === "encrypted_content"));
+  });
+}
+
+export function isCodexNativeModel(modelStr) {
+  if (typeof modelStr !== "string") return false;
+  const slash = modelStr.indexOf("/");
+  if (slash <= 0) return false;
+  return resolveProviderAlias(modelStr.slice(0, slash)) === "codex";
+}
 
 // Flatten tool turns into prose so panel models keep the context but can't loop
 // on tools: drop the request's tools, turn tool/function results into assistant
@@ -226,12 +243,35 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
  * @returns {Promise<Response>}
  */
-export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true }) {
-  // Apply rotation strategy if enabled
-  let rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
+export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true, preferredModel = null, onEligibleFallback = null, onRequiredTransportRebind = null }) {
+  if (preferredModel && !models.includes(preferredModel)) {
+    return new Response(
+      JSON.stringify({ error: { message: "Pinned model is no longer part of this combo", code: "pinned_route_unavailable" } }),
+      { status: 409, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
+  const requiresCodexNative = hasOpaqueResponsesContent(body);
+  const eligibleModels = requiresCodexNative ? models.filter(isCodexNativeModel) : models;
+  if (eligibleModels.length === 0) {
+    return new Response(
+      JSON.stringify({ error: { message: "Encrypted Codex input requires a native Codex Responses route", code: "codex_responses_route_unavailable" } }),
+      { status: 409, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
+  let effectivePreferredModel = preferredModel;
+  if (requiresCodexNative && preferredModel && !isCodexNativeModel(preferredModel)) {
+    effectivePreferredModel = null;
+    onRequiredTransportRebind?.({ model: preferredModel });
+  }
+
+  let rotatedModels = effectivePreferredModel
+    ? [effectivePreferredModel, ...eligibleModels.filter((model) => model !== effectivePreferredModel)]
+    : getRotatedModels(eligibleModels, comboName, comboStrategy, comboStickyLimit);
 
   // Auto-switch: float models that satisfy the request's required capabilities to the front.
-  if (autoSwitch) {
+  if (autoSwitch && !effectivePreferredModel) {
     const required = detectRequiredCapabilities(body);
     if (required.size > 0) {
       const reordered = reorderByCapabilities(rotatedModels, required);
@@ -262,9 +302,11 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       // Extract error info from response
       let errorText = result.statusText || "";
       let retryAfter = null;
+      let errorCode = null;
       try {
         const errorBody = await result.clone().json();
         errorText = errorBody?.error?.message || errorBody?.error || errorBody?.message || errorText;
+        errorCode = errorBody?.error?.code || errorBody?.code || null;
         retryAfter = errorBody?.retryAfter || null;
       } catch {
         // Ignore JSON parse errors
@@ -280,6 +322,11 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         try { errorText = JSON.stringify(errorText); } catch { errorText = String(errorText); }
       }
 
+      if (errorCode === "upstream_attempt_budget_exhausted") {
+        log.warn("COMBO", `Request attempt budget exhausted at ${modelStr}`);
+        return result;
+      }
+
       // Check if should fallback to next model
       const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText);
 
@@ -287,6 +334,8 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
         return result;
       }
+
+      onEligibleFallback?.({ model: modelStr, status: result.status });
 
       // For transient errors (503/502/504), wait for cooldown before falling through
       // so a briefly-overloaded provider gets a chance to recover rather than being
@@ -302,10 +351,12 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       if (!lastStatus) lastStatus = result.status;
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
     } catch (error) {
-      // Catch unexpected exceptions to ensure fallback continues
       lastError = error.message || String(error);
-      if (!lastStatus) lastStatus = 500;
-      log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
+      log.warn("COMBO", `Model ${modelStr} threw an unclassified error`, { error: lastError });
+      return new Response(
+        JSON.stringify({ error: { message: "Gateway model handler failed" } }),
+        { status: 500, headers: { "Content-Type": "application/json" } }
+      );
     }
   }
 
