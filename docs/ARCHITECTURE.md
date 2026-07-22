@@ -536,6 +536,8 @@ Environment variables actively used by code:
 - Storage: `DATA_DIR`
 - Security hashing: `API_KEY_SECRET`, `MACHINE_ID_SALT`
 - Logging: `ENABLE_REQUEST_LOGS`
+- Codex routing is always enabled. `CODEX_THREAD_AFFINITY=true` is still injected by the CLI for compatibility, but a false environment value cannot disable persistent route binding, same-thread FIFO, or the no-fusion rule.
+- Provider quota and dispatch lifecycle: [Quota and Request Execution Policy](./QUOTA_POLICY.md)
 - Sync/cloud URLing: `NEXT_PUBLIC_BASE_URL`, `NEXT_PUBLIC_CLOUD_URL`
 - Outbound proxy: `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` and lowercase variants
 - Platform/runtime helpers (not app-specific config): `APPDATA`, `NODE_ENV`, `PORT`, `HOSTNAME`

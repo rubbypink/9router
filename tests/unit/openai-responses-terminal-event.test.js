@@ -4,6 +4,7 @@ import { FORMATS } from "../../open-sse/translator/formats.js";
 import { createSSETransformStreamWithLogger } from "../../open-sse/utils/stream.js";
 
 async function runTransform(input) {
+  let completedSuccessfully = null;
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     start(controller) {
@@ -20,6 +21,11 @@ async function runTransform(input) {
       null,
       null,
       "gpt-5.5",
+      null,
+      null,
+      (_content, _usage, _ttftAt, succeeded) => {
+        completedSuccessfully = succeeded;
+      },
     ),
   );
 
@@ -34,12 +40,12 @@ async function runTransform(input) {
   }
 
   text += decoder.decode();
-  return text;
+  return { text, completedSuccessfully };
 }
 
 describe("OpenAI Responses streaming termination", () => {
   it("emits a response.failed event when a Responses stream closes before a terminal event", async () => {
-    const output = await runTransform([
+    const { text: output, completedSuccessfully } = await runTransform([
       `event: response.created`,
       `data: ${JSON.stringify({ type: "response.created", response: { id: "resp_test", status: "in_progress" } })}`,
       "",
@@ -52,10 +58,11 @@ describe("OpenAI Responses streaming termination", () => {
     expect(output).toContain('"type":"response.failed"');
     expect(output).not.toContain("data: null");
     expect(output).toContain("data: [DONE]");
+    expect(completedSuccessfully).toBe(false);
   });
 
   it("does not add response.failed when a Responses stream already completed", async () => {
-    const output = await runTransform([
+    const { text: output, completedSuccessfully } = await runTransform([
       `event: response.completed`,
       `data: ${JSON.stringify({ type: "response.completed", response: { id: "resp_test", status: "completed" } })}`,
       "",
@@ -65,10 +72,11 @@ describe("OpenAI Responses streaming termination", () => {
     expect(output).not.toContain("event: response.failed");
     expect(output).not.toContain("data: null");
     expect(output).toContain("data: [DONE]");
+    expect(completedSuccessfully).toBe(true);
   });
 
   it("does not add response.failed when a Responses stream sends response.done", async () => {
-    const output = await runTransform([
+    const { text: output, completedSuccessfully } = await runTransform([
       `event: response.done`,
       `data: ${JSON.stringify({ type: "response.done", response: { id: "resp_test" } })}`,
       "",
@@ -78,10 +86,24 @@ describe("OpenAI Responses streaming termination", () => {
     expect(output).not.toContain("event: response.failed");
     expect(output).not.toContain("data: null");
     expect(output).toContain("data: [DONE]");
+    expect(completedSuccessfully).toBe(true);
+  });
+
+  it("treats response.incomplete as a terminal failure", async () => {
+    const { text: output, completedSuccessfully } = await runTransform([
+      `event: response.incomplete`,
+      `data: ${JSON.stringify({ type: "response.incomplete", response: { id: "resp_test", status: "incomplete" } })}`,
+      "",
+    ].join("\n"));
+
+    expect(output).toContain("event: response.incomplete");
+    expect(output).not.toContain("event: response.failed");
+    expect(output).toContain("data: [DONE]");
+    expect(completedSuccessfully).toBe(false);
   });
 
   it("emits response.failed before DONE when a Responses stream sends DONE without a terminal event", async () => {
-    const output = await runTransform([
+    const { text: output, completedSuccessfully } = await runTransform([
       `event: response.created`,
       `data: ${JSON.stringify({ type: "response.created", response: { id: "resp_test", status: "in_progress" } })}`,
       "",
@@ -92,5 +114,6 @@ describe("OpenAI Responses streaming termination", () => {
     expect(output.indexOf("event: response.failed")).toBeLessThan(output.indexOf("data: [DONE]"));
     expect(output.match(/data: \[DONE\]/g)).toHaveLength(1);
     expect(output).not.toContain("data: null");
+    expect(completedSuccessfully).toBe(false);
   });
 });

@@ -244,10 +244,21 @@ describe("DB SQLite layer — public API parity", () => {
   });
 
   it("exportDb / importDb roundtrip", async () => {
+    sqliteDb.upsertThreadRouteBinding("thread-key", {
+      requestedModel: "quick",
+      model: "provider/model",
+      resolvedModel: "provider/model",
+      connectionId: "connection-1",
+      routeEpoch: 1,
+      assignedAt: 10,
+      lastRoutedAt: 11,
+      lastSuccessAt: 12,
+    });
     const exported = await sqliteDb.exportDb();
     expect(exported.settings).toBeDefined();
     expect(Array.isArray(exported.providerConnections)).toBe(true);
     expect(typeof exported.modelAliases).toBe("object");
+    expect(exported.threadRouteBindings).toHaveLength(1);
 
     // Add marker, export, import a different payload, verify reset
     await sqliteDb.setModelAlias("marker", "before");
@@ -258,6 +269,11 @@ describe("DB SQLite layer — public API parity", () => {
 
     await sqliteDb.importDb(snap);
     expect((await sqliteDb.getModelAliases()).marker).toBe("before");
+    expect(sqliteDb.getThreadRouteBinding("thread-key")).toMatchObject({
+      model: "provider/model",
+      connectionId: "connection-1",
+      lastSuccessAt: 12,
+    });
   });
 
   it("pricing: user pricing merged with constants", async () => {

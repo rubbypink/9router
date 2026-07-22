@@ -80,6 +80,29 @@ describe("Gemini TTS", () => {
     expect(sent.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName).toBe("Puck");
   });
 
+  it("preserves provider quota timing on a TTS failure", async () => {
+    const before = Date.now();
+    global.fetch.mockResolvedValueOnce(new Response(
+      JSON.stringify({ error: { message: "quota exhausted", status: "RESOURCE_EXHAUSTED" } }),
+      { status: 429, headers: { "Content-Type": "application/json", "Retry-After": "7" } },
+    ));
+
+    const result = await handleTtsCore({
+      provider: "gemini",
+      model: "Zephyr",
+      input: "Hello from Gemini",
+      credentials: { apiKey: "test-key" },
+    });
+
+    expect(result).toMatchObject({
+      success: false,
+      status: 429,
+      error: "quota exhausted",
+      errorCode: "RESOURCE_EXHAUSTED",
+    });
+    expect(result.resetsAtMs).toBeGreaterThanOrEqual(before + 6_900);
+  });
+
   it("exposes current Gemini TTS models in the TTS catalog", () => {
     const entries = buildTtsProviderModels();
 

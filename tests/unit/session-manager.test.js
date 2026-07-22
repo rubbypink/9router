@@ -57,6 +57,42 @@ describe("resolveSessionId", () => {
     expect(got).toBe("client-sess-123");
   });
 
+  it("uses Codex thread-id before the shared session-id", () => {
+    const got = resolveSessionId({
+      headers: {
+        "thread-id": "codex-thread-a",
+        "session-id": "shared-parent-session",
+        "x-client-request-id": "codex-thread-a",
+      },
+      body: bodyWithAssistant,
+      connectionId: "conn1",
+      scope: "codex",
+    });
+
+    expect(got).toBe("codex-thread-a");
+  });
+
+  it("keeps child Codex threads separate even when session-id is shared", () => {
+    const common = {
+      "session-id": "shared-parent-session",
+    };
+    const first = resolveSessionId({
+      headers: { ...common, "thread-id": "child-thread-a" },
+      body: bodyWithAssistant,
+      connectionId: "conn1",
+      scope: "codex",
+    });
+    const second = resolveSessionId({
+      headers: { ...common, "thread-id": "child-thread-b" },
+      body: bodyWithAssistant,
+      connectionId: "conn1",
+      scope: "codex",
+    });
+
+    expect(first).toBe("child-thread-a");
+    expect(second).toBe("child-thread-b");
+  });
+
   it("does not treat request-scoped x-client-request-id as a session override", () => {
     const first = resolveSessionId({
       headers: { "x-client-request-id": "req-1" },

@@ -142,7 +142,13 @@ describe("handleVideoCreate", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("x-9router-connection-id")).toBe("conn-2");
     expect(authMocks.markAccountUnavailable).toHaveBeenCalledWith(
-      "conn-1", 401, expect.any(String), "xai", null
+      "conn-1",
+      401,
+      expect.any(String),
+      "xai",
+      null,
+      null,
+      { errorCode: null },
     );
   });
 

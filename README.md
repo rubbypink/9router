@@ -1237,6 +1237,7 @@ docker pull decolua/9router:latest   # update to latest
 | `REQUIRE_API_KEY`                                    | `false`                                  | Enforce Bearer API key on `/v1/*` routes (recommended for internet-exposed deploys) |
 | `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | empty                                    | Optional outbound proxy for upstream provider calls                                 |
 | `SEARXNG_URL`                                        | `http://localhost:8888/search`           | Endpoint for the built-in unauthenticated SearXNG web-search provider               |
+| `CODEX_THREAD_AFFINITY`                              | always `true`                            | Compatibility-only environment value; Codex thread routing is always enabled             |
 
 Notes:
 
@@ -1244,6 +1245,7 @@ Notes:
 - `.env` is not baked into Docker image (`.dockerignore`); inject runtime config with `--env-file` or `-e`.
 - On Windows, `APPDATA` can be used for local storage path resolution.
 - `INSTANCE_NAME` appears in older docs/env templates, but is currently not used at runtime.
+- Quota reset parsing, automatic account recovery, request pacing, and the logical attempt budget are documented in [Quota and Request Execution Policy](./docs/QUOTA_POLICY.md).
 
 ### Runtime Files and Storage
 
