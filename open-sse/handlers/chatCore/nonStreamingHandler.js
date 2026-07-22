@@ -9,6 +9,8 @@ import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
+import { restoreResponsesToolIdentity } from "../../translator/concerns/toolNamespace.js";
+import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
 
 function parseToolArguments(value) {
   if (!value) return {};
@@ -56,6 +58,66 @@ function openAICompletionToClaudeMessage(responseBody) {
     usage: {
       input_tokens: usage.prompt_tokens || usage.input_tokens || 0,
       output_tokens: usage.completion_tokens || usage.output_tokens || 0,
+    },
+  };
+}
+
+export function openAICompletionToResponsesResponse(responseBody, toolNameMap = null) {
+  if (!responseBody?.choices?.[0]) return responseBody;
+  const choice = responseBody.choices[0];
+  const message = choice.message || {};
+  const output = [];
+
+  const reasoning = message.reasoning_content || message.provider_specific_fields?.reasoning_content;
+  if (reasoning) {
+    output.push({
+      id: `rs_${responseBody.id || Date.now()}`,
+      type: RESPONSES_ITEM.REASONING,
+      summary: [{ type: RESPONSES_ITEM.SUMMARY_TEXT, text: reasoning }],
+    });
+  }
+
+  if (typeof message.content === "string") {
+    output.push({
+      id: `msg_${responseBody.id || Date.now()}`,
+      type: RESPONSES_ITEM.MESSAGE,
+      status: "completed",
+      role: ROLE.ASSISTANT,
+      content: [{ type: RESPONSES_ITEM.OUTPUT_TEXT, text: message.content, annotations: [], logprobs: [] }],
+    });
+  }
+
+  for (const toolCall of message.tool_calls || []) {
+    const fn = toolCall.function || {};
+    const identity = restoreResponsesToolIdentity(fn.name || toolCall.name || "", toolNameMap);
+    output.push({
+      id: `fc_${toolCall.id || Date.now()}`,
+      type: RESPONSES_ITEM.FUNCTION_CALL,
+      status: "completed",
+      call_id: toolCall.id || `call_${Date.now()}`,
+      arguments: typeof fn.arguments === "string" ? fn.arguments : JSON.stringify(fn.arguments || {}),
+      ...identity,
+    });
+  }
+
+  const usage = responseBody.usage || {};
+  const inputTokens = usage.input_tokens ?? usage.prompt_tokens ?? 0;
+  const outputTokens = usage.output_tokens ?? usage.completion_tokens ?? 0;
+  return {
+    id: String(responseBody.id || `resp_${Date.now()}`).replace(/^chatcmpl-?/, "resp_"),
+    object: "response",
+    created_at: responseBody.created || Math.floor(Date.now() / 1000),
+    completed_at: responseBody.created || Math.floor(Date.now() / 1000),
+    status: "completed",
+    background: false,
+    error: null,
+    incomplete_details: null,
+    model: responseBody.model || "unknown",
+    output,
+    usage: {
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      total_tokens: usage.total_tokens ?? inputTokens + outputTokens,
     },
   };
 }
@@ -238,9 +300,12 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, silent: true });
   if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
 
-  const translatedResponse = needsTranslation(targetFormat, sourceFormat)
+  let translatedResponse = needsTranslation(targetFormat, sourceFormat)
     ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
     : responseBody;
+  if (sourceFormat === FORMATS.OPENAI_RESPONSES && targetFormat !== FORMATS.OPENAI_RESPONSES) {
+    translatedResponse = openAICompletionToResponsesResponse(translatedResponse, toolNameMap);
+  }
   const isClaudeMessageResponse = sourceFormat === FORMATS.CLAUDE && translatedResponse?.type === "message";
 
   // Fix finish_reason for tool_calls: some providers return non-standard values (e.g. "other")

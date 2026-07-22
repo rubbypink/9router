@@ -4,10 +4,7 @@
  */
 
 import { handleChatCore } from "./chatCore.js";
-import { convertResponsesApiFormat } from "../translator/formats/responsesApi.js";
-import { createResponsesApiTransformStream } from "../transformer/responsesTransformer.js";
 import { convertResponsesStreamToJson } from "../transformer/streamToJsonConverter.js";
-import { SSE_HEADERS_CORS } from "../utils/sseConstants.js";
 
 /**
  * Handle /v1/responses request
@@ -23,19 +20,12 @@ import { SSE_HEADERS_CORS } from "../utils/sseConstants.js";
  * @returns {Promise<{success: boolean, response?: Response, status?: number, error?: string}>}
  */
 export async function handleResponsesCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, connectionId }) {
-  // Convert Responses API format to Chat Completions format
-  const convertedBody = convertResponsesApiFormat(body);
-
-  // Preserve client's stream preference (matches OpenClaw behavior)
-  // Default to false if omitted: Boolean(undefined) = false
-  const clientRequestedStreaming = convertedBody.stream === true;
-  if (convertedBody.stream === undefined) {
-    convertedBody.stream = false;
-  }
+  const clientRequestedStreaming = body.stream === true;
+  const requestBody = body.stream === undefined ? { ...body, stream: false } : body;
 
   // Call chat core handler — force sourceFormat so streaming path knows this is a Responses API client
   const result = await handleChatCore({
-    body: convertedBody,
+    body: requestBody,
     modelInfo,
     credentials,
     log,
@@ -79,21 +69,5 @@ export async function handleResponsesCore({ body, modelInfo, credentials, log, o
     }
   }
 
-  // Case 2: Client wants streaming, got SSE - transform it
-  if (clientRequestedStreaming && contentType.includes("text/event-stream")) {
-    const transformStream = createResponsesApiTransformStream(null);
-    const transformedBody = response.body.pipeThrough(transformStream);
-
-    return {
-      success: true,
-      response: new Response(transformedBody, {
-        status: 200,
-        headers: { ...SSE_HEADERS_CORS }
-      })
-    };
-  }
-
-  // Case 3: Non-SSE response (error or non-streaming from provider) - return as-is
   return result;
 }
-

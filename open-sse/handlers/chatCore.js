@@ -8,7 +8,7 @@ import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
 import { getModelTargetFormat, getModelStrip, getModelUpstreamId, getModelType, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { PROVIDERS } from "../config/providers.js";
-import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
+import { createErrorResult, createTypedErrorResult, createRoutingErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
 import { HTTP_STATUS, TOKEN_SAVER_HEADER } from "../config/runtimeConfig.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import { trackPendingRequest, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
@@ -30,6 +30,12 @@ import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { extractThinking } from "../translator/concerns/thinkingUnified.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
+import { getUnsupportedResponsesAdapterFeatures } from "../translator/concerns/toolNamespace.js";
+import { RESPONSES_ADAPTER_ERROR_CODE } from "../config/responsesConfig.js";
+import {
+  isUpstreamExecutionControlError,
+  runAsUpstreamDispatch,
+} from "../services/requestExecutionState.js";
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -65,6 +71,16 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (runtimeTransport && credentials) credentials.runtimeTransport = runtimeTransport;
   const stripList = getModelStrip(alias, model);
   const upstreamModel = getModelUpstreamId(alias, model);
+
+  if (sourceFormat === FORMATS.OPENAI_RESPONSES && targetFormat !== FORMATS.OPENAI_RESPONSES) {
+    const unsupportedFields = getUnsupportedResponsesAdapterFeatures(body);
+    if (unsupportedFields.length > 0) {
+      const message = `Responses chat adapter does not support: ${unsupportedFields.join(", ")}`;
+      return createTypedErrorResult(HTTP_STATUS.BAD_REQUEST, message, RESPONSES_ADAPTER_ERROR_CODE, {
+        unsupported_fields: unsupportedFields,
+      });
+    }
+  }
 
   // Inject provider-level thinking config override (only if client hasn't set)
   // on/off → extended type (body.thinking), none/low/medium/high → effort type (body.reasoning_effort)
@@ -294,8 +310,27 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Most executors return their registry format. Cursor AgentService is an
   // exception: it is decoded by the executor into OpenAI-compatible output.
   let providerResponseFormat = targetFormat;
+  const providerEndpointHints = [
+    executor.getBaseUrls?.() || [],
+    runtimeTransport?.baseUrl,
+    runtimeTransport?.baseUrls || [],
+    credentials?.providerSpecificData?.baseUrl,
+  ];
+  const executeProviderRequest = () => runAsUpstreamDispatch(
+    provider,
+    () => executor.execute({
+      model,
+      body: translatedBody,
+      stream,
+      credentials,
+      signal: streamController.signal,
+      log,
+      proxyOptions,
+    }),
+    providerEndpointHints,
+  );
   try {
-    const result = await executor.execute({ model, body: translatedBody, stream, credentials, signal: streamController.signal, log, proxyOptions });
+    const result = await executeProviderRequest();
     providerResponse = result.response;
     providerUrl = result.url;
     providerHeaders = result.headers;
@@ -320,6 +355,12 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       streamController.handleError(error);
       return createErrorResult(499, "Request aborted");
     }
+    if (isUpstreamExecutionControlError(error)) {
+      return createRoutingErrorResult(error.status || HTTP_STATUS.SERVICE_UNAVAILABLE, error.message, error.code, {
+        attempts: error.attempts,
+        max_attempts: error.maxAttempts,
+      });
+    }
     const errMsg = formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY);
     if (log?.errorLine) {
       log.errorLine(reqTag, "✗", `ERROR 502 · ${provider}/${model} · ${Date.now() - requestStartTime}ms\n    ${errMsg}${error.stack ? `\n    ${error.stack}` : ""}`);
@@ -338,7 +379,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
           try { await onCredentialsRefreshed(newCredentials); } catch (e) { log?.warn?.("TOKEN", `onCredentialsRefreshed failed: ${e.message}`); }
         }
         try {
-          const retryResult = await executor.execute({ model, body: translatedBody, stream, credentials, signal: streamController.signal, log, proxyOptions });
+          const retryResult = await executeProviderRequest();
           if (retryResult.response.ok) {
             providerResponse = retryResult.response;
             providerUrl = retryResult.url;
@@ -356,7 +397,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Provider returned error
   if (!providerResponse.ok) {
     trackPendingRequest(model, provider, connectionId, false, true);
-    const { statusCode, message, resetsAtMs } = await parseUpstreamError(providerResponse, executor);
+    const { statusCode, message, resetsAtMs, errorCode } = await parseUpstreamError(providerResponse, executor);
     appendRequestLog({ model, provider, connectionId, status: `FAILED ${statusCode}` }).catch(() => { });
     saveRequestDetail(buildRequestDetail({
       provider, model, connectionId,
@@ -375,7 +416,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       log.errorLine(reqTag, "✗", `ERROR ${statusCode} · ${provider}/${model} · ${Date.now() - requestStartTime}ms${urlStr}\n    ${errMsg}`);
     }
     reqLogger.logError(new Error(message), finalBody || translatedBody);
-    return createErrorResult(statusCode, errMsg, resetsAtMs);
+    return createErrorResult(statusCode, errMsg, resetsAtMs, { errorCode });
   }
 
   const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, reqTag, log };

@@ -8,7 +8,28 @@ import { buildChunk } from "../concerns/chunk.js";
 import { buildUsage } from "../concerns/usage.js";
 import { fallbackToolCallId } from "../concerns/toolCall.js";
 import { reasoningDelta, extractReasoningText } from "../concerns/reasoning.js";
+import { restoreResponsesToolIdentity } from "../concerns/toolNamespace.js";
 import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM, OPENAI_FINISH, MODEL_FALLBACK } from "../schema/index.js";
+
+function toResponsesUsage(usage) {
+  if (!usage || typeof usage !== "object") return null;
+  const inputTokens = usage.input_tokens ?? usage.prompt_tokens ?? 0;
+  const outputTokens = usage.output_tokens ?? usage.completion_tokens ?? 0;
+  const result = {
+    input_tokens: inputTokens,
+    output_tokens: outputTokens,
+    total_tokens: usage.total_tokens ?? inputTokens + outputTokens,
+  };
+  const cachedTokens = usage.input_tokens_details?.cached_tokens ?? usage.prompt_tokens_details?.cached_tokens;
+  const reasoningTokens = usage.output_tokens_details?.reasoning_tokens ?? usage.completion_tokens_details?.reasoning_tokens;
+  if (cachedTokens !== undefined) result.input_tokens_details = { cached_tokens: cachedTokens };
+  if (reasoningTokens !== undefined) result.output_tokens_details = { reasoning_tokens: reasoningTokens };
+  return result;
+}
+
+function toolIdentity(state, wireName) {
+  return restoreResponsesToolIdentity(wireName, state.toolNameMap);
+}
 
 /**
  * Translate OpenAI chunk to Responses API events
@@ -18,7 +39,10 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
   if (!chunk) {
     return flushEvents(state);
   }
-  
+
+  if (chunk.usage && typeof chunk.usage === "object") {
+    state.usage = { ...(state.usage || {}), ...chunk.usage };
+  }
   if (!chunk.choices?.length) return [];
   
   const events = [];
@@ -47,6 +71,8 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
         status: "in_progress",
         background: false,
         error: null,
+        incomplete_details: null,
+        model: state.model || MODEL_FALLBACK,
         output: []
       }
     });
@@ -57,7 +83,8 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
         id: state.responseId,
         object: "response",
         created_at: state.created,
-        status: "in_progress"
+        status: "in_progress",
+        model: state.model || MODEL_FALLBACK
       }
     });
   }
@@ -112,7 +139,6 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
     for (const i in state.msgItemAdded) closeMessage(state, emit, i);
     closeReasoning(state, emit);
     for (const i in state.funcCallIds) closeToolCall(state, emit, i);
-    sendCompleted(state, emit);
   }
 
   return events;
@@ -122,18 +148,18 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
 function startReasoning(state, emit, idx) {
   if (!state.reasoningId) {
     state.reasoningId = `rs_${state.responseId}_${idx}`;
-    state.reasoningIndex = idx;
+    state.reasoningIndex = state.nextOutputIndex++;
     
     emit("response.output_item.added", {
       type: "response.output_item.added",
-      output_index: idx,
+      output_index: state.reasoningIndex,
       item: { id: state.reasoningId, type: RESPONSES_ITEM.REASONING, summary: [] }
     });
 
     emit("response.reasoning_summary_part.added", {
       type: "response.reasoning_summary_part.added",
       item_id: state.reasoningId,
-      output_index: idx,
+      output_index: state.reasoningIndex,
       summary_index: 0,
       part: { type: RESPONSES_ITEM.SUMMARY_TEXT, text: "" }
     });
@@ -173,14 +199,16 @@ function closeReasoning(state, emit) {
       part: { type: RESPONSES_ITEM.SUMMARY_TEXT, text: state.reasoningBuf }
     });
 
+    const item = {
+      id: state.reasoningId,
+      type: RESPONSES_ITEM.REASONING,
+      summary: [{ type: RESPONSES_ITEM.SUMMARY_TEXT, text: state.reasoningBuf }]
+    };
+    state.outputItems[state.reasoningIndex] = item;
     emit("response.output_item.done", {
       type: "response.output_item.done",
       output_index: state.reasoningIndex,
-      item: {
-        id: state.reasoningId,
-        type: RESPONSES_ITEM.REASONING,
-        summary: [{ type: RESPONSES_ITEM.SUMMARY_TEXT, text: state.reasoningBuf }]
-      }
+      item
     });
   }
 }
@@ -188,12 +216,13 @@ function closeReasoning(state, emit) {
 function emitTextContent(state, emit, idx, content) {
   if (!state.msgItemAdded[idx]) {
     state.msgItemAdded[idx] = true;
+    state.msgOutputIndexes[idx] = state.nextOutputIndex++;
     const msgId = `msg_${state.responseId}_${idx}`;
     
     emit("response.output_item.added", {
       type: "response.output_item.added",
-      output_index: idx,
-      item: { id: msgId, type: RESPONSES_ITEM.MESSAGE, content: [], role: ROLE.ASSISTANT }
+      output_index: state.msgOutputIndexes[idx],
+      item: { id: msgId, type: RESPONSES_ITEM.MESSAGE, status: "in_progress", content: [], role: ROLE.ASSISTANT }
     });
   }
 
@@ -203,7 +232,7 @@ function emitTextContent(state, emit, idx, content) {
     emit("response.content_part.added", {
       type: "response.content_part.added",
       item_id: `msg_${state.responseId}_${idx}`,
-      output_index: idx,
+      output_index: state.msgOutputIndexes[idx],
       content_index: 0,
       part: { type: RESPONSES_ITEM.OUTPUT_TEXT, annotations: [], logprobs: [], text: "" }
     });
@@ -212,7 +241,7 @@ function emitTextContent(state, emit, idx, content) {
   emit("response.output_text.delta", {
     type: "response.output_text.delta",
     item_id: `msg_${state.responseId}_${idx}`,
-    output_index: idx,
+    output_index: state.msgOutputIndexes[idx],
     content_index: 0,
     delta: content,
     logprobs: []
@@ -227,11 +256,12 @@ function closeMessage(state, emit, idx) {
     state.msgItemDone[idx] = true;
     const fullText = state.msgTextBuf[idx] || "";
     const msgId = `msg_${state.responseId}_${idx}`;
+    const outputIndex = state.msgOutputIndexes[idx];
 
     emit("response.output_text.done", {
       type: "response.output_text.done",
       item_id: msgId,
-      output_index: parseInt(idx),
+      output_index: outputIndex,
       content_index: 0,
       text: fullText,
       logprobs: []
@@ -240,20 +270,23 @@ function closeMessage(state, emit, idx) {
     emit("response.content_part.done", {
       type: "response.content_part.done",
       item_id: msgId,
-      output_index: parseInt(idx),
+      output_index: outputIndex,
       content_index: 0,
       part: { type: RESPONSES_ITEM.OUTPUT_TEXT, annotations: [], logprobs: [], text: fullText }
     });
 
+    const item = {
+      id: msgId,
+      type: RESPONSES_ITEM.MESSAGE,
+      status: "completed",
+      content: [{ type: RESPONSES_ITEM.OUTPUT_TEXT, annotations: [], logprobs: [], text: fullText }],
+      role: ROLE.ASSISTANT
+    };
+    state.outputItems[outputIndex] = item;
     emit("response.output_item.done", {
       type: "response.output_item.done",
-      output_index: parseInt(idx),
-      item: {
-        id: msgId,
-        type: RESPONSES_ITEM.MESSAGE,
-        content: [{ type: RESPONSES_ITEM.OUTPUT_TEXT, annotations: [], logprobs: [], text: fullText }],
-        role: ROLE.ASSISTANT
-      }
+      output_index: outputIndex,
+      item
     });
   }
 }
@@ -267,16 +300,18 @@ function emitToolCall(state, emit, tc) {
 
   if (!state.funcCallIds[tcIdx] && newCallId) {
     state.funcCallIds[tcIdx] = newCallId;
-    
+    state.funcOutputIndexes[tcIdx] = state.nextOutputIndex++;
+    const identity = toolIdentity(state, state.funcNames[tcIdx] || "");
     emit("response.output_item.added", {
       type: "response.output_item.added",
-      output_index: tcIdx,
+      output_index: state.funcOutputIndexes[tcIdx],
       item: {
         id: `fc_${newCallId}`,
         type: RESPONSES_ITEM.FUNCTION_CALL,
+        status: "in_progress",
         arguments: "",
         call_id: newCallId,
-        name: state.funcNames[tcIdx] || ""
+        ...identity
       }
     });
   }
@@ -289,7 +324,7 @@ function emitToolCall(state, emit, tc) {
       emit("response.function_call_arguments.delta", {
         type: "response.function_call_arguments.delta",
         item_id: `fc_${refCallId}`,
-        output_index: tcIdx,
+        output_index: state.funcOutputIndexes[tcIdx],
         delta: tc.function.arguments
       });
     }
@@ -301,24 +336,28 @@ function closeToolCall(state, emit, idx) {
   const callId = state.funcCallIds[idx];
   if (callId && !state.funcItemDone[idx]) {
     const args = state.funcArgsBuf[idx] || "{}";
-    
+    const outputIndex = state.funcOutputIndexes[idx];
+    const identity = toolIdentity(state, state.funcNames[idx] || "");
     emit("response.function_call_arguments.done", {
       type: "response.function_call_arguments.done",
       item_id: `fc_${callId}`,
-      output_index: parseInt(idx),
+      output_index: outputIndex,
       arguments: args
     });
 
+    const item = {
+      id: `fc_${callId}`,
+      type: RESPONSES_ITEM.FUNCTION_CALL,
+      status: "completed",
+      arguments: args,
+      call_id: callId,
+      ...identity
+    };
+    state.outputItems[outputIndex] = item;
     emit("response.output_item.done", {
       type: "response.output_item.done",
-      output_index: parseInt(idx),
-      item: {
-        id: `fc_${callId}`,
-        type: RESPONSES_ITEM.FUNCTION_CALL,
-        arguments: args,
-        call_id: callId,
-        name: state.funcNames[idx] || ""
-      }
+      output_index: outputIndex,
+      item
     });
 
     state.funcItemDone[idx] = true;
@@ -329,15 +368,21 @@ function closeToolCall(state, emit, idx) {
 function sendCompleted(state, emit) {
   if (!state.completedSent) {
     state.completedSent = true;
+    const usage = toResponsesUsage(state.usage);
     emit("response.completed", {
       type: "response.completed",
       response: {
         id: state.responseId,
         object: "response",
         created_at: state.created,
+        completed_at: Math.floor(Date.now() / 1000),
         status: "completed",
         background: false,
-        error: null
+        error: null,
+        incomplete_details: null,
+        model: state.model || MODEL_FALLBACK,
+        output: state.outputItems.filter(Boolean),
+        ...(usage ? { usage } : {})
       }
     });
   }

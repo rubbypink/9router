@@ -1,3 +1,5 @@
+import { QUOTA_FALLBACK_POLICY } from "./quotaPolicy.js";
+
 // OpenAI-compatible error types mapping (client-facing)
 export const ERROR_TYPES = {
   400: { type: "invalid_request_error", code: "bad_request" },
@@ -30,16 +32,18 @@ export const DEFAULT_ERROR_MESSAGES = {
 
 // Exponential backoff config for rate limits
 export const BACKOFF_CONFIG = {
-  base: 2000,
-  max: 5 * 60 * 1000,
-  maxLevel: 15
+  base: QUOTA_FALLBACK_POLICY.baseCooldownMs,
+  max: QUOTA_FALLBACK_POLICY.maxCooldownMs,
+  maxLevel: QUOTA_FALLBACK_POLICY.maxBackoffLevel
 };
 
 // Default cooldown for transient/unknown errors
 export const TRANSIENT_COOLDOWN_MS = 30 * 1000;
 
-// Hard cap for provider-reported rate limit cooldown (e.g. codex resets_at can be 5-6h)
-export const MAX_RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000;
+export const ACCOUNT_HEALTH_CONFIG = {
+  historyLimit: 12,
+  errorMessageLimit: 160,
+};
 
 // Cooldown durations (ms)
 const COOLDOWN = {
@@ -59,8 +63,6 @@ const COOLDOWN = {
 export const ERROR_RULES = [
   // --- Text-based rules (checked first, order = priority) ---
   { text: "no credentials",           cooldownMs: COOLDOWN.long },
-  { text: "request not allowed",      cooldownMs: COOLDOWN.short },
-  { text: "improperly formed request", cooldownMs: COOLDOWN.long },
   { text: "rate limit",               backoff: true },
   { text: "too many requests",        backoff: true },
   { text: "quota exceeded",           backoff: true },
@@ -72,7 +74,13 @@ export const ERROR_RULES = [
   { status: 402, cooldownMs: COOLDOWN.long },
   { status: 403, cooldownMs: COOLDOWN.long },
   { status: 404, cooldownMs: COOLDOWN.long },
+  { status: 408, cooldownMs: COOLDOWN.short },
   { status: 429, backoff: true },
+  { status: 500, cooldownMs: COOLDOWN.short },
+  { status: 502, cooldownMs: COOLDOWN.short },
+  { status: 503, cooldownMs: COOLDOWN.short },
+  { status: 504, cooldownMs: COOLDOWN.short },
+  { status: 529, cooldownMs: COOLDOWN.short },
 ];
 
 // Backward compat: COOLDOWN_MS object (used by index.js re-export)

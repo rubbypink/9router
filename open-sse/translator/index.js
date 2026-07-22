@@ -52,6 +52,13 @@ function stripContentTypes(body, stripList = []) {
 export function translateRequest(sourceFormat, targetFormat, model, body, stream = true, credentials = null, provider = null, reqLogger = null, stripList = [], connectionId = null, clientTool = null) {
   ensureInitialized();
   let result = body;
+  let responsesNamespaceMap = null;
+  const captureResponsesNamespaceMap = () => {
+    if (result?._responsesToolNameMap instanceof Map) {
+      responsesNamespaceMap = result._responsesToolNameMap;
+      delete result._responsesToolNameMap;
+    }
+  };
 
   // Strip explicit content types (opt-in via strip[] in PROVIDER_MODELS entry)
   stripContentTypes(result, stripList);
@@ -82,12 +89,14 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
     const directFn = requestRegistry.get(`${sourceFormat}:${targetFormat}`);
     if (directFn) {
       result = directFn(model, result, stream, credentials);
+      captureResponsesNamespaceMap();
     } else {
       // Step 1: source -> openai (if source is not openai)
       if (sourceFormat !== FORMATS.OPENAI) {
         const toOpenAI = requestRegistry.get(`${sourceFormat}:${FORMATS.OPENAI}`);
         if (toOpenAI) {
           result = toOpenAI(model, result, stream, credentials);
+          captureResponsesNamespaceMap();
           // Log OpenAI intermediate format
           reqLogger?.logOpenAIRequest?.(result);
         }
@@ -139,6 +148,12 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
         result._toolNameMap = toolNameMap;
       }
     }
+  }
+
+  if (responsesNamespaceMap?.size > 0) {
+    const toolNameMap = result._toolNameMap instanceof Map ? result._toolNameMap : new Map();
+    toolNameMap.responsesNamespaceMap = responsesNamespaceMap;
+    result._toolNameMap = toolNameMap;
   }
 
   // Antigravity cloaking disabled
@@ -244,6 +259,7 @@ export function initState(sourceFormat) {
       msgItemAdded: {},
       msgContentAdded: {},
       msgItemDone: {},
+      msgOutputIndexes: {},
       reasoningId: "",
       reasoningIndex: -1,
       reasoningBuf: "",
@@ -255,6 +271,9 @@ export function initState(sourceFormat) {
       funcCallIds: {},
       funcArgsDone: {},
       funcItemDone: {},
+      funcOutputIndexes: {},
+      nextOutputIndex: 0,
+      outputItems: [],
       completedSent: false
     };
   }
