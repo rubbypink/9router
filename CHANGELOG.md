@@ -1,3 +1,12 @@
+# v0.5.40-9trip.5 (2026-07-23)
+
+## Fixes
+- **Routing**: allow every configured 9router model to handle Codex Responses input while preserving thread-scoped route affinity
+- **Fallback**: apply combo round-robin before provider-account fallback and skip accounts or combo members with current quota/error state
+- **Quota**: reconcile provider-specific reset data so refreshed accounts and combo members become eligible immediately
+- **Retries**: cap ambiguous network retries at two and switch accounts immediately for definitive upstream failures
+- **Translator**: preserve native encrypted Responses content and serialize portable content for non-native providers
+
 # v0.5.40 (2026-07-20)
 
 ## Features

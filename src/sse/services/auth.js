@@ -4,7 +4,6 @@ import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLock
 import { ACCOUNT_HEALTH_CONFIG } from "open-sse/config/errorConfig.js";
 import { resolveQuotaPolicy } from "open-sse/config/quotaPolicy.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
-import { selectNextSessionAffinityConnection } from "@/lib/db/repos/threadRoutesRepo.js";
 import * as log from "../utils/logger.js";
 
 // Mutex to prevent race conditions during account selection
@@ -12,9 +11,22 @@ let selectionMutex = Promise.resolve();
 
 const ACCOUNT_HEALTH_VERSION = 2;
 const ACCOUNT_HEALTH_ALL_MODELS = "__all";
+const BLOCKING_CONNECTION_STATUSES = new Set(["error", "expired"]);
+const BLOCKING_STORED_ERROR = /quota|rate limit|too many requests|capacity|out of credits|no credits|spending limit|usage limit/i;
+const MODEL_SCOPED_USAGE_PROVIDERS = new Set(["antigravity", "gemini-cli"]);
+const CLAUDE_QUOTA_FAMILIES = ["sonnet", "opus", "haiku"];
 
 function healthModelKey(model) {
   return model || ACCOUNT_HEALTH_ALL_MODELS;
+}
+
+function claudeQuotaFamily(model) {
+  const lowerModel = String(model || "").toLowerCase();
+  return CLAUDE_QUOTA_FAMILIES.find((family) => lowerModel.includes(family)) || null;
+}
+
+function claudeQuotaHealthKey(family) {
+  return `__family:${family}`;
 }
 
 function activeLockKeys(connection, now = Date.now()) {
@@ -47,6 +59,150 @@ function currentAccountHealth(connection) {
     : {};
   const recentErrors = Array.isArray(health.recentErrors) ? health.recentErrors : [];
   return { health, models, recentErrors };
+}
+
+function toFiniteNumber(value) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function quotaAvailability(quota) {
+  if (!quota || typeof quota !== "object" || Array.isArray(quota)) return "unknown";
+  if (quota.unlimited === true) return "available";
+  const remaining = toFiniteNumber(quota.remaining);
+  if (remaining !== null) return remaining > 0 ? "available" : "exhausted";
+  const remainingPercentage = toFiniteNumber(quota.remainingPercentage);
+  if (remainingPercentage !== null) return remainingPercentage > 0 ? "available" : "exhausted";
+  const used = toFiniteNumber(quota.used);
+  const total = toFiniteNumber(quota.total);
+  if (used !== null && total !== null && total > 0) return used < total ? "available" : "exhausted";
+  return "unknown";
+}
+
+function combineQuotaEntries(entries, mode, now = Date.now()) {
+  const observed = entries.map(([, quota]) => ({ quota, state: quotaAvailability(quota) }));
+  const known = observed.filter(({ state }) => state !== "unknown");
+  if (known.length === 0) return { state: "unknown", retryAt: null };
+
+  const available = known.filter(({ state }) => state === "available");
+  const exhausted = known.filter(({ state }) => state === "exhausted");
+  let state = "unknown";
+  if (mode === "any") {
+    if (available.length > 0) state = "available";
+    else if (known.length === observed.length) state = "exhausted";
+  } else if (exhausted.length > 0) {
+    state = "exhausted";
+  } else if (known.length === observed.length) {
+    state = "available";
+  }
+
+  if (state !== "exhausted") return { state, retryAt: null };
+  const resets = exhausted
+    .map(({ quota }) => new Date(quota.resetAt).getTime())
+    .filter((value) => Number.isFinite(value) && value > now);
+  if (resets.length === 0) return { state, retryAt: null };
+  const retryAtMs = mode === "any" ? Math.min(...resets) : Math.max(...resets);
+  return { state, retryAt: new Date(retryAtMs).toISOString() };
+}
+
+function providerQuotaVerdict(provider, usage, model = null, now = Date.now()) {
+  if (!usage || usage.error || usage.message) return { state: "unknown", retryAt: null };
+  const quotas = usage.quotas;
+  if (!quotas || typeof quotas !== "object" || Array.isArray(quotas)) return { state: "unknown", retryAt: null };
+  const entries = Object.entries(quotas);
+  if (entries.length === 0) return { state: "unknown", retryAt: null };
+
+  if (MODEL_SCOPED_USAGE_PROVIDERS.has(provider)) {
+    const quota = quotas[model];
+    return quota ? combineQuotaEntries([[model, quota]], "all", now) : { state: "unknown", retryAt: null };
+  }
+
+  if (provider === "codex") {
+    const normal = entries.filter(([name]) => name === "session" || name === "weekly");
+    if (usage.limitReached === true) {
+      const verdict = combineQuotaEntries(normal, "all", now);
+      return { state: "exhausted", retryAt: verdict.retryAt };
+    }
+    return combineQuotaEntries(normal, "all", now);
+  }
+
+  if (provider === "claude") {
+    const lowerModel = String(model || "").toLowerCase();
+    const blocking = entries.filter(([name]) => {
+      const lowerName = name.toLowerCase();
+      if (lowerName === "session (5h)" || lowerName === "weekly (7d)") return true;
+      return CLAUDE_QUOTA_FAMILIES.some((family) => lowerModel.includes(family) && lowerName.includes(family));
+    });
+    return combineQuotaEntries(blocking, "all", now);
+  }
+
+  if (provider === "qoder" && typeof usage.isQuotaExceeded === "boolean") {
+    const verdict = combineQuotaEntries(entries, "any", now);
+    return usage.isQuotaExceeded
+      ? { state: "exhausted", retryAt: verdict.retryAt }
+      : { state: "available", retryAt: null };
+  }
+
+  if (provider === "github") {
+    const chat = entries.filter(([name]) => name === "chat");
+    return combineQuotaEntries(chat, "all", now);
+  }
+
+  if (provider === "vercel-ai-gateway") {
+    const remaining = entries.filter(([name]) => name === "Remaining (USD)");
+    return combineQuotaEntries(remaining, "all", now);
+  }
+
+  if (provider === "glm" || provider === "glm-cn") {
+    return combineQuotaEntries(entries.filter(([name]) => name === "session"), "all", now);
+  }
+
+  if (provider === "minimax" || provider === "minimax-cn") {
+    const lowerModel = String(model || "").toLowerCase();
+    const relevant = lowerModel.startsWith("minimax-m")
+      ? entries.filter(([name]) => name.toLowerCase().includes("m-series") || name.toLowerCase().includes(lowerModel.replaceAll("-", " ")))
+      : [];
+    return combineQuotaEntries(relevant.length > 0 ? relevant : entries, "all", now);
+  }
+
+  const additiveProviders = new Set(["codebuddy-cn", "grok-cli", "kiro"]);
+  return combineQuotaEntries(entries, additiveProviders.has(provider) ? "any" : "all", now);
+}
+
+function getStoredUnavailability(connection, model, now = Date.now()) {
+  const current = currentAccountHealth(connection);
+  const family = connection?.provider === "claude" ? claudeQuotaFamily(model) : null;
+  const familyHealth = family ? current?.models?.[claudeQuotaHealthKey(family)] : null;
+  const health = current?.models?.[healthModelKey(model)] || familyHealth || current?.models?.[ACCOUNT_HEALTH_ALL_MODELS];
+  if (health?.state === "unavailable") {
+    const retryAtMs = health.retryAt ? new Date(health.retryAt).getTime() : Number.NaN;
+    if (!Number.isFinite(retryAtMs) || retryAtMs > now) {
+      return {
+        reason: health.reason || "accountHealth",
+        retryAt: Number.isFinite(retryAtMs) ? new Date(retryAtMs).toISOString() : null,
+      };
+    }
+  }
+
+  const hasStructuredModels = Object.keys(current?.models || {}).length > 0;
+  const legacyRetryAt = new Date(connection?.rateLimitedUntil).getTime();
+  if (!hasStructuredModels && Number.isFinite(legacyRetryAt) && legacyRetryAt > now) {
+    return { reason: "rateLimitedUntil", retryAt: new Date(legacyRetryAt).toISOString() };
+  }
+
+  const testStatus = String(connection?.testStatus || "").toLowerCase();
+  if (BLOCKING_CONNECTION_STATUSES.has(testStatus)) return { reason: testStatus, retryAt: null };
+  if (testStatus === "unavailable" && !hasStructuredModels && activeLockKeys(connection, now).length === 0) {
+    return { reason: "unavailable", retryAt: null };
+  }
+  if (!hasStructuredModels && connection?.lastError && BLOCKING_STORED_ERROR.test(String(connection.lastError))) {
+    return { reason: "storedQuotaError", retryAt: null };
+  }
+  return null;
 }
 
 function recordAccountHealth(connection, { model, status, errorCode, reason, retryAt, source, quotaPolicy, now }) {
@@ -85,8 +241,8 @@ function clearExpiredAccountHealth(connection, clearedLockKeys = [], now = Date.
   const models = {};
   let changed = current.health.version !== ACCOUNT_HEALTH_VERSION;
   for (const [model, value] of Object.entries(current.models)) {
-    const retryAt = new Date(value?.retryAt).getTime();
-    if (clearedModels.has(model) || !Number.isFinite(retryAt) || retryAt <= now) {
+    const retryAt = value?.retryAt ? new Date(value.retryAt).getTime() : Number.NaN;
+    if (clearedModels.has(model) || (Number.isFinite(retryAt) && retryAt <= now)) {
       changed = true;
       continue;
     }
@@ -114,7 +270,10 @@ function accountRecoveryUpdate(connection, extraClearedLockKeys = [], now = Date
   const health = clearExpiredAccountHealth(connection, clearedLockKeys, now);
   if (health.changed) update.accountHealth = health.value;
 
-  if (activeLockKeys(connection, now).filter(key => !clearedLockKeys.includes(key)).length === 0) {
+  const hasActiveLocks = activeLockKeys(connection, now).some(key => !clearedLockKeys.includes(key));
+  const hasActiveHealth = Object.keys(health.value?.models || {}).length > 0;
+  const recoveredAutomaticState = clearedLockKeys.length > 0 || health.changed;
+  if (recoveredAutomaticState && !hasActiveLocks && !hasActiveHealth) {
     if (connection.testStatus === "unavailable" || connection.lastError || connection.lastErrorAt || connection.errorCode || connection.backoffLevel) {
       Object.assign(update, {
         testStatus: "active",
@@ -146,6 +305,172 @@ export async function reconcileAccountHealth() {
   return { checked: connections.length, reconciled };
 }
 
+function providerUsageHealthEntry(provider, retryAt, now) {
+  const observedAt = new Date(now).toISOString();
+  return {
+    state: "unavailable",
+    reason: "quota",
+    status: 429,
+    errorCode: "quota_exhausted",
+    observedAt,
+    retryAt,
+    source: "provider-usage",
+    quotaPolicy: resolveQuotaPolicy(provider).id,
+    message: "Provider usage reports quota exhausted",
+  };
+}
+
+function quotaHealthModelKeys(connection) {
+  return Object.entries(currentAccountHealth(connection)?.models || {})
+    .filter(([, value]) => value?.reason === "quota")
+    .map(([model]) => model);
+}
+
+function modelFromLockKey(key) {
+  return key.slice("modelLock_".length);
+}
+
+export async function reconcileProviderQuotaState(connection, usage, now = Date.now()) {
+  if (!connection?.id) return { updated: false, state: "unknown" };
+  const provider = resolveProviderId(connection.provider);
+  const current = currentAccountHealth(connection);
+  const models = { ...(current?.models || {}) };
+  const update = {};
+  let modelsChanged = false;
+  let observedState = "unknown";
+  const legacyQuotaState = Boolean(connection.lastError && BLOCKING_STORED_ERROR.test(String(connection.lastError)));
+
+  const clearModelQuota = (model) => {
+    if (models[model]?.reason === "quota") {
+      delete models[model];
+      modelsChanged = true;
+    }
+    const lockKey = getModelLockKey(model === ACCOUNT_HEALTH_ALL_MODELS ? null : model);
+    if (connection[lockKey]) update[lockKey] = null;
+  };
+
+  const setModelQuota = (model, retryAt) => {
+    models[model] = providerUsageHealthEntry(provider, retryAt, now);
+    modelsChanged = true;
+    update[getModelLockKey(model === ACCOUNT_HEALTH_ALL_MODELS ? null : model)] = retryAt;
+  };
+
+  const applyVerdict = (model, verdict) => {
+    if (verdict.state === "available") {
+      observedState = observedState === "exhausted" ? observedState : "available";
+      clearModelQuota(model);
+    } else if (verdict.state === "exhausted") {
+      observedState = "exhausted";
+      setModelQuota(model, verdict.retryAt);
+    }
+  };
+
+  if (MODEL_SCOPED_USAGE_PROVIDERS.has(provider)) {
+    const quotas = usage?.quotas;
+    if (quotas && typeof quotas === "object" && !Array.isArray(quotas) && !usage?.message && !usage?.error) {
+      for (const model of Object.keys(quotas)) {
+        applyVerdict(model, providerQuotaVerdict(provider, usage, model, now));
+      }
+    }
+  } else if (provider === "claude") {
+    const globalVerdict = providerQuotaVerdict(provider, usage, null, now);
+    if (globalVerdict.state === "exhausted") {
+      for (const model of quotaHealthModelKeys(connection)) clearModelQuota(model);
+      applyVerdict(ACCOUNT_HEALTH_ALL_MODELS, globalVerdict);
+    } else if (globalVerdict.state === "available") {
+      applyVerdict(ACCOUNT_HEALTH_ALL_MODELS, globalVerdict);
+      const quotaNames = Object.keys(usage?.quotas || {}).map((name) => name.toLowerCase());
+      for (const family of CLAUDE_QUOTA_FAMILIES) {
+        const familyKey = claudeQuotaHealthKey(family);
+        const hasFamilyQuota = quotaNames.some((name) => name.includes(family));
+        applyVerdict(
+          familyKey,
+          hasFamilyQuota ? providerQuotaVerdict(provider, usage, family, now) : { state: "available", retryAt: null },
+        );
+      }
+    }
+  } else {
+    const knownModel = quotaHealthModelKeys(connection).find((model) => model !== ACCOUNT_HEALTH_ALL_MODELS) || null;
+    const verdict = providerQuotaVerdict(provider, usage, knownModel, now);
+    if (verdict.state === "available") {
+      const quotaModels = quotaHealthModelKeys(connection);
+      for (const model of quotaModels) clearModelQuota(model);
+      if (legacyQuotaState && quotaModels.length === 0) {
+        for (const key of activeLockKeys(connection, now)) update[key] = null;
+      }
+      applyVerdict(ACCOUNT_HEALTH_ALL_MODELS, verdict);
+    } else if (verdict.state === "exhausted") {
+      for (const model of quotaHealthModelKeys(connection)) clearModelQuota(model);
+      applyVerdict(ACCOUNT_HEALTH_ALL_MODELS, verdict);
+    }
+  }
+
+  if (modelsChanged) {
+    update.accountHealth = {
+      version: ACCOUNT_HEALTH_VERSION,
+      updatedAt: new Date(now).toISOString(),
+      models,
+      recentErrors: (current?.recentErrors || []).slice(-ACCOUNT_HEALTH_CONFIG.historyLimit),
+    };
+  }
+
+  if (observedState === "exhausted") {
+    const retryAt = models[ACCOUNT_HEALTH_ALL_MODELS]?.retryAt || null;
+    Object.assign(update, {
+      testStatus: "unavailable",
+      lastError: "Provider usage reports quota exhausted",
+      lastErrorAt: new Date(now).toISOString(),
+      errorCode: "quota_exhausted",
+      rateLimitedUntil: retryAt,
+      backoffLevel: 0,
+    });
+  } else if (observedState === "available" && (legacyQuotaState || modelsChanged)) {
+    const merged = { ...connection, ...update };
+    const hasUnavailableHealth = Object.values(models).some((value) => value?.state === "unavailable");
+    const hasActiveLocks = activeLockKeys(merged, now).length > 0;
+    if (!hasUnavailableHealth && !hasActiveLocks && !BLOCKING_CONNECTION_STATUSES.has(String(connection.testStatus || "").toLowerCase())) {
+      Object.assign(update, {
+        testStatus: "active",
+        lastError: null,
+        lastErrorAt: null,
+        errorCode: null,
+        rateLimitedUntil: null,
+        backoffLevel: 0,
+      });
+    }
+  }
+
+  if (Object.keys(update).length === 0) return { updated: false, state: observedState };
+  await updateProviderConnection(connection.id, update);
+  return { updated: true, state: observedState };
+}
+
+export async function getProviderModelAvailability(provider, model = null) {
+  const providerId = resolveProviderId(provider);
+  if (FREE_PROVIDERS[providerId]?.noAuth) return { available: true };
+
+  const storedConnections = await getProviderConnections({ provider: providerId, isActive: true });
+  const connections = [];
+  for (const storedConnection of storedConnections) {
+    connections.push(await reconcileConnectionAvailability(storedConnection));
+  }
+  if (connections.length === 0) return { available: false, reason: "no_credentials", retryAfter: null };
+
+  const blocked = connections.map((connection) => ({
+    connection,
+    unavailable: getStoredUnavailability(connection, model),
+    locked: isModelLockActive(connection, model),
+  }));
+  if (blocked.some(({ unavailable, locked }) => !unavailable && !locked)) return { available: true };
+
+  const retryAfter = blocked.flatMap(({ connection, unavailable }) => [
+    unavailable?.retryAt,
+    isModelLockActive(connection, model) ? getEarliestModelLockUntil(connection) : null,
+  ]).filter(Boolean).sort()[0] || null;
+  const quotaBlocked = blocked.some(({ unavailable }) => unavailable?.reason === "quota" || unavailable?.reason === "storedQuotaError");
+  return { available: false, reason: quotaBlocked ? "quota" : "unavailable", retryAfter };
+}
+
 /**
  * Get provider credentials from localDb
  * Filters out unavailable accounts and returns the selected account based on strategy
@@ -159,7 +484,6 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     ? excludeConnectionIds
     : (excludeConnectionIds ? new Set([excludeConnectionIds]) : new Set());
   const preferredConnectionId = options?.preferredConnectionId || null;
-  const sessionKey = options?.sessionKey || null;
   // Acquire mutex to prevent race conditions
   const currentMutex = selectionMutex;
   let resolveMutex;
@@ -210,10 +534,15 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return null;
     }
 
-    // Filter out model-locked and excluded connections
+    const storedUnavailability = new Map(connections.map((connection) => [
+      connection.id,
+      getStoredUnavailability(connection, model),
+    ]));
+
     const availableConnections = connections.filter(c => {
       if (excludeSet.has(c.id)) return false;
       if (isModelLockActive(c, model)) return false;
+      if (storedUnavailability.get(c.id)) return false;
       return true;
     }).sort((left, right) => {
       const priorityDiff = (left.priority ?? 999) - (right.priority ?? 999);
@@ -225,20 +554,24 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     connections.forEach(c => {
       const excluded = excludeSet.has(c.id);
       const locked = isModelLockActive(c, model);
-      if (excluded || locked) {
+      const unavailable = storedUnavailability.get(c.id);
+      if (excluded || locked || unavailable) {
         const lockUntil = getEarliestModelLockUntil(c);
-        log.debug("AUTH", `  → ${c.id?.slice(0, 8)} | ${excluded ? "excluded" : ""} ${locked ? `modelLocked(${model}) until ${lockUntil}` : ""}`);
+        log.debug("AUTH", `  → ${c.id?.slice(0, 8)} | ${excluded ? "excluded" : ""} ${locked ? `modelLocked(${model}) until ${lockUntil}` : ""} ${unavailable ? `storedUnavailable(${unavailable.reason})` : ""}`);
       }
     });
 
     if (availableConnections.length === 0) {
       // Find earliest lock expiry across all connections for retry timing
-      const lockedConns = connections.filter(c => isModelLockActive(c, model));
-      const expiries = lockedConns.map(c => getEarliestModelLockUntil(c)).filter(Boolean);
+      const lockedConns = connections.filter(c => isModelLockActive(c, model) || storedUnavailability.get(c.id));
+      const expiries = lockedConns.flatMap(c => [
+        getEarliestModelLockUntil(c),
+        storedUnavailability.get(c.id)?.retryAt,
+      ]).filter(Boolean);
       const earliest = expiries.sort()[0] || null;
-      if (earliest) {
+      if (lockedConns.length > 0) {
         const earliestConn = lockedConns[0];
-        log.warn("AUTH", `${provider} | all ${connections.length} accounts locked for ${model || "all"} (${formatRetryAfter(earliest)}) | lastError=${earliestConn?.lastError?.slice(0, 50)}`);
+        log.warn("AUTH", `${provider} | all ${connections.length} accounts unavailable for ${model || "all"}${earliest ? ` (${formatRetryAfter(earliest)})` : ""} | lastError=${earliestConn?.lastError?.slice(0, 50)}`);
         return {
           allRateLimited: true,
           retryAfter: earliest,
@@ -266,8 +599,6 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     }
     if (connection) {
       // skip strategy
-    } else if (sessionKey) {
-      connection = selectNextSessionAffinityConnection(providerId, availableConnections);
     } else if (strategy === "round-robin") {
       const stickyLimit = providerOverride.stickyRoundRobinLimit || settings.stickyRoundRobinLimit || 3;
 

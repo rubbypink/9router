@@ -4,11 +4,10 @@ import { stripThinkingSuffix } from "../translator/concerns/thinkingUnified.js";
 import { FORMATS } from "../translator/formats.js";
 import { normalizeClaudePassthrough } from "../translator/formats/claude.js";
 import { createStreamController } from "../utils/streamHandler.js";
-import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
 import { getModelTargetFormat, getModelStrip, getModelUpstreamId, getModelType, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { PROVIDERS } from "../config/providers.js";
-import { createErrorResult, createTypedErrorResult, createRoutingErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
+import { createErrorResult, createTypedErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
 import { HTTP_STATUS, TOKEN_SAVER_HEADER } from "../config/runtimeConfig.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import { trackPendingRequest, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
@@ -33,7 +32,6 @@ import { resolveSessionId } from "../utils/sessionManager.js";
 import { getUnsupportedResponsesAdapterFeatures } from "../translator/concerns/toolNamespace.js";
 import { RESPONSES_ADAPTER_ERROR_CODE } from "../config/responsesConfig.js";
 import {
-  isUpstreamExecutionControlError,
   runAsUpstreamDispatch,
 } from "../services/requestExecutionState.js";
 
@@ -355,43 +353,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       streamController.handleError(error);
       return createErrorResult(499, "Request aborted");
     }
-    if (isUpstreamExecutionControlError(error)) {
-      return createRoutingErrorResult(error.status || HTTP_STATUS.SERVICE_UNAVAILABLE, error.message, error.code, {
-        attempts: error.attempts,
-        max_attempts: error.maxAttempts,
-      });
-    }
     const errMsg = formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY);
     if (log?.errorLine) {
       log.errorLine(reqTag, "✗", `ERROR 502 · ${provider}/${model} · ${Date.now() - requestStartTime}ms\n    ${errMsg}${error.stack ? `\n    ${error.stack}` : ""}`);
     }
     return createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg);
-  }
-
-  // Handle 401/403 - try token refresh (skip for noAuth providers)
-  if (!executor.noAuth && (providerResponse.status === HTTP_STATUS.UNAUTHORIZED || providerResponse.status === HTTP_STATUS.FORBIDDEN)) {
-    try {
-      const newCredentials = await refreshWithRetry(() => executor.refreshCredentials(credentials, log), 3, log);
-      if (newCredentials?.accessToken || newCredentials?.copilotToken) {
-        if (log?.line) log.line(reqTag, "🔑", `TOKEN REFRESHED · ${provider}/${model}`);
-        Object.assign(credentials, newCredentials);
-        if (onCredentialsRefreshed) {
-          try { await onCredentialsRefreshed(newCredentials); } catch (e) { log?.warn?.("TOKEN", `onCredentialsRefreshed failed: ${e.message}`); }
-        }
-        try {
-          const retryResult = await executeProviderRequest();
-          if (retryResult.response.ok) {
-            providerResponse = retryResult.response;
-            providerUrl = retryResult.url;
-            providerResponseFormat = retryResult.responseFormat || targetFormat;
-          }
-        } catch { log?.warn?.("TOKEN", `${provider.toUpperCase()} | retry after refresh failed`); }
-      } else {
-        log?.warn?.("TOKEN", `${provider.toUpperCase()} | refresh failed`);
-      }
-    } catch (e) {
-      log?.warn?.("TOKEN", `${provider.toUpperCase()} | refresh threw: ${e.message}`);
-    }
   }
 
   // Provider returned error

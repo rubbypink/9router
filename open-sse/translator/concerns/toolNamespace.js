@@ -143,6 +143,7 @@ export function getUnsupportedResponsesAdapterFeatures(body) {
           if (block.file_id !== undefined && block.file_id !== null) unsupported.push(`${path}.file_id`);
           return;
         }
+        if (block.type === "encrypted_content" || block.type === "reasoning_encrypted_content") return;
         if (![RESPONSES_ITEM.INPUT_TEXT, RESPONSES_ITEM.OUTPUT_TEXT].includes(block.type)) {
           unsupported.push(`${path}.type:${block.type || "unknown"}`);
         }

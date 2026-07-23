@@ -34,7 +34,6 @@ describe("provider quota policy", () => {
     expect(resolveQuotaPolicy("custom-embedding-team").id).toBe("openai-compatible");
     expect(REQUEST_EXECUTION_POLICY).toEqual({
       minEndpointIntervalMs: 2_000,
-      maxUpstreamAttemptsPerRequest: 4,
     });
   });
 });

@@ -12,7 +12,6 @@ import { initTranslators } from "open-sse/translator/index.js";
 import { parseUpstreamError } from "open-sse/utils/error.js";
 import {
   createUpstreamRequestState,
-  isUpstreamExecutionControlError,
   runAsUpstreamDispatch,
   runWithUpstreamRequestState,
 } from "open-sse/services/requestExecutionState.js";
@@ -308,17 +307,6 @@ async function forwardGeminiNativeRequest(request, body, model, action) {
         }), [GEMINI_NATIVE_BASE_URL]);
     } catch (error) {
       const durationMs = Date.now() - startedAt;
-      if (isUpstreamExecutionControlError(error)) {
-        return Response.json({
-          error: {
-            message: error.message,
-            type: "server_error",
-            code: error.code,
-            attempts: error.attempts,
-            max_attempts: error.maxAttempts,
-          },
-        }, { status: error.status || 503 });
-      }
       if (request.signal?.aborted && !timedOut) {
         console.log(`[GEMINI_NATIVE] client aborted model=${modelId} ms=${durationMs} conn=${safeConnection}`);
         return Response.json({ error: { message: "Client closed request" } }, { status: 499 });

@@ -15,6 +15,9 @@ vi.mock("@/lib/network/connectionProxy", () => ({
 vi.mock("@/app/api/usage/[connectionId]/route.js", () => ({
   refreshAndUpdateCredentials: vi.fn(),
 }));
+vi.mock("@/sse/services/auth.js", () => ({
+  reconcileProviderQuotaState: vi.fn(),
+}));
 
 vi.mock("@/shared/constants/config", () => ({
   QUOTA_AUTOPING_CONFIG: {
@@ -97,6 +100,7 @@ describe("quota auto-ping", () => {
       updateProviderConnection: vi.fn(),
       resolveConnectionProxyConfig: vi.fn().mockResolvedValue({}),
       refreshAndUpdateCredentials: vi.fn(async (connection) => ({ connection, refreshed: false })),
+      reconcileProviderQuotaState: vi.fn(),
       proxyAwareFetch: vi.fn().mockResolvedValue({ ok: true }),
       getExecutor: vi.fn(() => ({
         execute: vi.fn().mockResolvedValue({ response: { ok: true, text: codexResponseText } }),
@@ -149,6 +153,10 @@ describe("quota auto-ping", () => {
 
     await runQuotaAutoPingTick(deps, state);
 
+    expect(deps.reconcileProviderQuotaState).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "codex-1", provider: "codex" }),
+      expect.objectContaining({ quotas: expect.any(Object) }),
+    );
     expect(deps.getExecutor).not.toHaveBeenCalled();
     expect(deps.updateProviderConnection).not.toHaveBeenCalled();
     expect(state.resetCache["codex:codex-1"]).toBe("2026-01-01T13:00:00.000Z");

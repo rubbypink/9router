@@ -2,6 +2,7 @@ import "open-sse/index.js";
 
 import {
   getProviderCredentials,
+  getProviderModelAvailability,
   markAccountUnavailable,
   clearAccountError,
   extractApiKey,
@@ -32,18 +33,27 @@ import {
   runWithUpstreamRequestState,
 } from "open-sse/services/requestExecutionState.js";
 
-function isAffinityRebindEligible(result) {
-  const status = Number(result?.status);
-  if (!Number.isInteger(status) || status <= 0) return true;
-  return status === 401 || status === 402 || status === 403 || status === 408 || status === 429 || status >= 500;
-}
-
-function allowAffinityComboFallback(routeContext, { status }) {
-  if (!routeContext) return true;
-  if (!isAffinityRebindEligible({ status })) return false;
+function markAffinityComboFallback(routeContext) {
+  if (!routeContext) return;
   routeContext.allowRebind = true;
   routeContext.rebindReason = "combo_eligible_fallback";
-  return true;
+}
+
+function prepareAffinityComboRoute(routeContext, comboModels) {
+  const pinnedModel = routeContext?.binding?.model;
+  if (pinnedModel && !comboModels.includes(pinnedModel)) markAffinityComboFallback(routeContext);
+}
+
+async function getComboModelAvailability(modelStr) {
+  const modelInfo = await getModelInfo(modelStr);
+  if (!modelInfo?.provider) return { available: true };
+  return getProviderModelAvailability(modelInfo.provider, modelInfo.model);
+}
+
+function markAffinityComboSelection(routeContext, comboStrategy, model) {
+  if (!routeContext || comboStrategy !== "round-robin" || routeContext.binding?.model === model) return;
+  routeContext.allowRebind = true;
+  routeContext.rebindReason = "combo_round_robin";
 }
 
 /**
@@ -117,9 +127,6 @@ export async function handleChat(request, clientRawRequest = null) {
       const comboStrategy = comboSpecificStrategy || settings.comboStrategy || "fallback";
 
       if (comboStrategy === "fusion") {
-        if (routeContext) {
-          return errorResponse(409, "Fusion combos are incompatible with Codex thread affinity");
-        }
         log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: fusion)`);
         return handleFusionChat({
           body,
@@ -139,6 +146,7 @@ export async function handleChat(request, clientRawRequest = null) {
         });
       }
 
+      prepareAffinityComboRoute(routeContext, comboModels);
       const comboStickyLimit = settings.comboStickyRoundRobinLimit;
       log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
       return handleComboChat({
@@ -150,13 +158,9 @@ export async function handleChat(request, clientRawRequest = null) {
         comboStrategy,
         comboStickyLimit,
         preferredModel: routeContext?.binding?.model || null,
-        onEligibleFallback: (details) => allowAffinityComboFallback(routeContext, details),
-        onRequiredTransportRebind: () => {
-          if (routeContext) {
-            routeContext.allowRebind = true;
-            routeContext.rebindReason = "transport_rebind";
-          }
-        },
+        getModelAvailability: getComboModelAvailability,
+        onModelSelected: ({ model }) => markAffinityComboSelection(routeContext, comboStrategy, model),
+        onEligibleFallback: () => markAffinityComboFallback(routeContext),
       });
     }
 
@@ -207,9 +211,6 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       const comboStrategy = comboSpecificStrategy || chatSettings.comboStrategy || "fallback";
 
       if (comboStrategy === "fusion") {
-        if (routeContext) {
-          return errorResponse(409, "Fusion combos are incompatible with Codex thread affinity");
-        }
         log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: fusion)`);
         return handleFusionChat({
           body,
@@ -229,6 +230,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         });
       }
 
+      prepareAffinityComboRoute(routeContext, comboModels);
       const comboStickyLimit = chatSettings.comboStickyRoundRobinLimit;
       log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
       return handleComboChat({
@@ -240,13 +242,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         comboStrategy,
         comboStickyLimit,
         preferredModel: routeContext?.binding?.model || null,
-        onEligibleFallback: (details) => allowAffinityComboFallback(routeContext, details),
-        onRequiredTransportRebind: () => {
-          if (routeContext) {
-            routeContext.allowRebind = true;
-            routeContext.rebindReason = "transport_rebind";
-          }
-        },
+        getModelAvailability: getComboModelAvailability,
+        onModelSelected: ({ model }) => markAffinityComboSelection(routeContext, comboStrategy, model),
+        onEligibleFallback: () => markAffinityComboFallback(routeContext),
       });
     }
     log.warn("CHAT", "Invalid model format", { model: modelStr });
@@ -267,9 +265,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   const resolvedRouteModel = `${provider}/${model}`;
 
   while (true) {
-    const preferredConnectionId = !routeContext?.allowRebind
-      ? routeContext?.coordinator.getConnectionBinding(routeContext.sessionKey, provider)?.connectionId || null
-      : null;
+    const preferredConnectionId = routeContext?.coordinator
+      .getConnectionBinding(routeContext.sessionKey, provider)?.connectionId || null;
     const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, {
       preferredConnectionId,
       sessionKey: routeContext?.sessionKey || null,
@@ -291,7 +288,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
     }
 
-    if (preferredConnectionId && credentials.connectionId !== preferredConnectionId) {
+    if (preferredConnectionId && credentials.connectionId !== preferredConnectionId && !routeContext?.allowRebind) {
       routeContext.allowRebind = true;
       routeContext.rebindReason = "bound_connection_unavailable";
     }
@@ -381,8 +378,6 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     });
 
     if (result.success || result.routingFailure) return result.response;
-
-    if (routeContext && !isAffinityRebindEligible(result)) return result.response;
 
     // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
     const { shouldFallback } = await markAccountUnavailable(

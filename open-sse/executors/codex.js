@@ -8,11 +8,10 @@ import {
 import { normalizeResponsesInput } from "../translator/formats/responsesApi.js";
 import { fetchImageAsBase64 } from "../translator/concerns/image.js";
 import { getModelUpstreamId } from "../config/providerModels.js";
-import { DEFAULT_RETRY_CONFIG, HTTP_STATUS, resolveRetryEntry } from "../config/runtimeConfig.js";
+import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { dbg } from "../utils/debugLog.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 
-// SSE error patterns inside 200-OK bodies. Some retry same account first; capacity rotates accounts.
 const CODEX_SSE_RETRY_PATTERNS = ["server_is_overloaded", "service_unavailable_error"];
 const CODEX_SSE_ACCOUNT_FALLBACK_PATTERNS = ["selected model is at capacity", "model_at_capacity"];
 const CODEX_SSE_USER_OUTPUT_PATTERNS = [
@@ -262,40 +261,25 @@ export class CodexExecutor extends BaseExecutor {
       await this.prefetchImages(args.body);
     }
 
-    // Retry loop for SSE-level overloaded errors (200 OK body contains event: error)
-    // Reuses 503 retry config — same semantic: upstream temporarily unavailable
-    const retryConfig = { ...DEFAULT_RETRY_CONFIG, ...this.config.retry };
-    const { attempts, delayMs } = resolveRetryEntry(retryConfig[503]);
-    let attempt = 0;
-    while (true) {
-      const result = await super.execute(args);
-      const peek = await this._peekSseTransientError(result.response);
-      if (!peek.matched) {
-        // Replace body with re-assembled stream (prefix bytes already read + rest)
-        if (peek.replacementBody) {
-          result.response = new Response(peek.replacementBody, {
-            status: result.response.status,
-            statusText: result.response.statusText,
-            headers: result.response.headers,
-          });
-        }
-        return result;
+    const result = await super.execute(args);
+    const peek = await this._peekSseTransientError(result.response);
+    if (!peek.matched) {
+      // Replace body with re-assembled stream (prefix bytes already read + rest)
+      if (peek.replacementBody) {
+        result.response = new Response(peek.replacementBody, {
+          status: result.response.status,
+          statusText: result.response.statusText,
+          headers: result.response.headers,
+        });
       }
-      if (peek.accountFallback) {
-        args.log?.warn?.("RETRY", `CODEX | SSE account fallback "${peek.message}"`);
-        result.response = codexSseErrorResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, peek.message || CODEX_MODEL_CAPACITY_MESSAGE);
-        return result;
-      }
-      if (attempt >= attempts) {
-        args.log?.warn?.("RETRY", `CODEX | SSE overloaded "${peek.matched}" — retries exhausted (${attempt}/${attempts})`);
-        result.response = codexSseErrorResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, peek.message || peek.matched);
-        return result;
-      }
-      attempt++;
-      args.log?.debug?.("RETRY", `CODEX | SSE "${peek.matched}" retry ${attempt}/${attempts} after ${delayMs / 1000}s`);
-      dbg("CODEX", `SSE overloaded "${peek.matched}" → retry ${attempt}/${attempts} in ${delayMs}ms`);
-      await new Promise(r => setTimeout(r, delayMs));
+      return result;
     }
+    args.log?.warn?.("RETRY", `CODEX | SSE account fallback "${peek.message || peek.matched}"`);
+    result.response = codexSseErrorResponse(
+      HTTP_STATUS.SERVICE_UNAVAILABLE,
+      peek.message || (peek.accountFallback ? CODEX_MODEL_CAPACITY_MESSAGE : peek.matched),
+    );
+    return result;
   }
 
   // Peek first N bytes of SSE body to detect upstream transient errors.

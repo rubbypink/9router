@@ -182,6 +182,18 @@ describe("session affinity v2 identity", () => {
 });
 
 describe("session affinity v2 route coordinator", () => {
+  it("keeps account pins isolated between threads", () => {
+    const coordinator = new ThreadRouteCoordinator({ store: makeStore() });
+    const firstSessionKey = "1".repeat(64);
+    const secondSessionKey = "2".repeat(64);
+
+    coordinator.bindRoute(firstSessionKey, "fast", route({ connectionId: "account-a" }));
+    coordinator.bindRoute(secondSessionKey, "fast", route({ connectionId: "account-b" }));
+
+    expect(coordinator.getConnectionBinding(firstSessionKey, "codex")).toMatchObject({ connectionId: "account-a" });
+    expect(coordinator.getConnectionBinding(secondSessionKey, "codex")).toMatchObject({ connectionId: "account-b" });
+  });
+
   it("stores model choices by route alias while retaining a same-provider connection", () => {
     const coordinator = new ThreadRouteCoordinator({ store: makeStore() });
     const sessionKey = "a".repeat(64);

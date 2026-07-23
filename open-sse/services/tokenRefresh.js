@@ -242,10 +242,11 @@ export async function getAllAccessTokens(userInfo, log) {
 }
 
 export async function refreshWithRetry(refreshFn, maxRetries = 3, log = null) {
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
+  const attempts = Math.min(Math.max(0, maxRetries), 2);
+  for (let attempt = 0; attempt < attempts; attempt++) {
     if (attempt > 0) {
       const delay = attempt * 1000;
-      log?.debug?.("TOKEN_REFRESH", `Retry ${attempt}/${maxRetries} after ${delay}ms`);
+      log?.debug?.("TOKEN_REFRESH", `Retry ${attempt}/${attempts} after ${delay}ms`);
       await new Promise(r => setTimeout(r, delay));
     }
 
@@ -253,10 +254,10 @@ export async function refreshWithRetry(refreshFn, maxRetries = 3, log = null) {
       const result = await refreshFn();
       if (result) return result;
     } catch (error) {
-      log?.warn?.("TOKEN_REFRESH", `Attempt ${attempt + 1}/${maxRetries} failed: ${error.message}`);
+      log?.warn?.("TOKEN_REFRESH", `Attempt ${attempt + 1}/${attempts} failed: ${error.message}`);
     }
   }
 
-  log?.error?.("TOKEN_REFRESH", `All ${maxRetries} retry attempts failed`);
+  log?.error?.("TOKEN_REFRESH", `All ${attempts} retry attempts failed`);
   return null;
 }

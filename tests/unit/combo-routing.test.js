@@ -3,8 +3,6 @@ import { describe, it, expect, beforeEach } from "vitest";
 import {
   getRotatedModels,
   handleComboChat,
-  hasOpaqueResponsesContent,
-  isCodexNativeModel,
   resetComboRotation,
 } from "../../open-sse/services/combo.js";
 
@@ -62,7 +60,7 @@ describe("combo round-robin routing", () => {
     expect(getRotatedModels(models, "code-xhigh", "fallback", 2)).toEqual(models);
   });
 
-  it("uses a thread-pinned model before round-robin state", async () => {
+  it("applies combo round-robin before a thread-pinned model", async () => {
     const calls = [];
     const response = await handleComboChat({
       body: { messages: [{ role: "user", content: "hello" }] },
@@ -78,10 +76,10 @@ describe("combo round-robin routing", () => {
     });
 
     expect(response.ok).toBe(true);
-    expect(calls).toEqual(["provider/model-b"]);
+    expect(calls).toEqual(["provider/model-a"]);
   });
 
-  it("falls away from a pinned model only for an eligible provider failure", async () => {
+  it("falls away from a pinned fallback model only for an eligible provider failure", async () => {
     const calls = [];
     const response = await handleComboChat({
       body: { messages: [{ role: "user", content: "hello" }] },
@@ -98,7 +96,7 @@ describe("combo round-robin routing", () => {
       },
       log: { info() {}, warn() {} },
       comboName: "quick",
-      comboStrategy: "round-robin",
+      comboStrategy: "fallback",
       preferredModel: "provider/model-b",
     });
 
@@ -106,7 +104,40 @@ describe("combo round-robin routing", () => {
     expect(calls).toEqual(["provider/model-b", "provider/model-a"]);
   });
 
-  it("returns the pinned 404 when an eligible fallback callback vetoes rotation", async () => {
+  it("skips a combo route with no quota-available account before provider account selection", async () => {
+    const events = [];
+    const retryAfter = new Date(Date.now() + 60_000).toISOString();
+    const response = await handleComboChat({
+      body: { messages: [{ role: "user", content: "hello" }] },
+      models: ["provider-a/model-a", "provider-b/model-b"],
+      getModelAvailability: async (model) => {
+        events.push(`availability:${model}`);
+        return model === "provider-a/model-a"
+          ? { available: false, retryAfter, reason: "quota" }
+          : { available: true };
+      },
+      onModelSelected: async ({ model }) => {
+        events.push(`selected:${model}`);
+      },
+      handleSingleModel: async (_body, model) => {
+        events.push(`account:${model}`);
+        return new Response("ok");
+      },
+      log: { info() {}, warn() {} },
+      comboName: "quick",
+      comboStrategy: "round-robin",
+    });
+
+    expect(response.ok).toBe(true);
+    expect(events).toEqual([
+      "availability:provider-a/model-a",
+      "availability:provider-b/model-b",
+      "selected:provider-b/model-b",
+      "account:provider-b/model-b",
+    ]);
+  });
+
+  it("notifies affinity state without letting the callback veto a configured fallback", async () => {
     const calls = [];
     const fallbackEvents = [];
     const response = await handleComboChat({
@@ -117,7 +148,7 @@ describe("combo round-robin routing", () => {
         if (model === "provider/model-b") {
           return new Response("pinned model not found", { status: 404 });
         }
-        return new Response("unexpected fallback");
+        return new Response("configured fallback");
       },
       log: { info() {}, warn() {} },
       comboName: "quick",
@@ -129,10 +160,29 @@ describe("combo round-robin routing", () => {
       },
     });
 
-    expect(response.status).toBe(404);
-    await expect(response.text()).resolves.toBe("pinned model not found");
-    expect(calls).toEqual(["provider/model-b"]);
+    expect(response.ok).toBe(true);
+    await expect(response.text()).resolves.toBe("configured fallback");
+    expect(calls).toEqual(["provider/model-b", "provider/model-a"]);
     expect(fallbackEvents).toEqual([{ model: "provider/model-b", status: 404 }]);
+  });
+
+  it("ignores a stale pin and starts with a model that remains in the combo", async () => {
+    const calls = [];
+    const response = await handleComboChat({
+      body: { messages: [{ role: "user", content: "hello" }] },
+      models: ["provider/model-a", "provider/model-b"],
+      handleSingleModel: async (_body, model) => {
+        calls.push(model);
+        return new Response("ok");
+      },
+      log: { info() {}, warn() {} },
+      comboName: "quick",
+      comboStrategy: "fallback",
+      preferredModel: "provider/model-removed",
+    });
+
+    expect(response.ok).toBe(true);
+    expect(calls).toEqual(["provider/model-a"]);
   });
 
   it("keeps legacy eligible 404 fallback when no veto callback is supplied", async () => {
@@ -180,14 +230,15 @@ describe("combo round-robin routing", () => {
     expect(calls).toEqual(["provider/model-b"]);
   });
 
-  it("does not switch models after an unclassified handler exception", async () => {
+  it("tries the next configured model after an unclassified handler exception", async () => {
     const calls = [];
     const response = await handleComboChat({
       body: { messages: [{ role: "user", content: "hello" }] },
       models: ["provider/model-a", "provider/model-b"],
       handleSingleModel: async (_body, model) => {
         calls.push(model);
-        throw new Error("unexpected gateway bug");
+        if (model === "provider/model-b") throw new Error("unexpected gateway bug");
+        return new Response("recovered");
       },
       log: { info() {}, warn() {} },
       comboName: "quick",
@@ -195,36 +246,39 @@ describe("combo round-robin routing", () => {
       preferredModel: "provider/model-b",
     });
 
-    expect(response.status).toBe(500);
-    expect(calls).toEqual(["provider/model-b"]);
+    expect(response.ok).toBe(true);
+    await expect(response.text()).resolves.toBe("recovered");
+    expect(calls).toEqual(["provider/model-b", "provider/model-a"]);
   });
 
-  it("stops combo fallback when the logical request attempt budget is exhausted", async () => {
+  it("does not let a legacy attempt-budget response block another configured model", async () => {
     const calls = [];
     const response = await handleComboChat({
       body: { messages: [{ role: "user", content: "hello" }] },
       models: ["provider/model-a", "provider/model-b"],
       handleSingleModel: async (_body, model) => {
         calls.push(model);
-        return new Response(JSON.stringify({
-          error: {
-            message: "Upstream attempt budget exhausted (4/4)",
-            code: "upstream_attempt_budget_exhausted",
-          },
-        }), { status: 503, headers: { "content-type": "application/json" } });
+        if (model === "provider/model-a") {
+          return new Response(JSON.stringify({
+            error: {
+              message: "Upstream attempt budget exhausted (4/4)",
+              code: "upstream_attempt_budget_exhausted",
+            },
+          }), { status: 404, headers: { "content-type": "application/json" } });
+        }
+        return new Response("configured fallback");
       },
       log: { info() {}, warn() {} },
       comboName: "quick",
       comboStrategy: "fallback",
     });
 
-    expect(response.status).toBe(503);
-    expect(calls).toEqual(["provider/model-a"]);
+    expect(response.ok).toBe(true);
+    expect(calls).toEqual(["provider/model-a", "provider/model-b"]);
   });
 
-  it("routes opaque Codex inter-agent content only through a native Responses model", async () => {
+  it("keeps a thread-pinned combo route for opaque inter-agent content", async () => {
     const calls = [];
-    const rebinds = [];
     const body = {
       input: [{
         type: "message",
@@ -247,31 +301,29 @@ describe("combo round-robin routing", () => {
       comboName: "codex",
       comboStrategy: "fallback",
       preferredModel: "fm/gpt-5.6-terra",
-      onRequiredTransportRebind: ({ model }) => rebinds.push(model),
     });
 
     expect(response.ok).toBe(true);
-    expect(hasOpaqueResponsesContent(body)).toBe(true);
-    expect(isCodexNativeModel("cx/gpt-5.6-terra")).toBe(true);
-    expect(calls).toEqual(["cx/gpt-5.6-terra"]);
-    expect(rebinds).toEqual(["fm/gpt-5.6-terra"]);
+    expect(calls).toEqual(["fm/gpt-5.6-terra"]);
   });
 
-  it("returns a typed conflict when opaque Codex content has no compatible route", async () => {
+  it("allows opaque inter-agent content on a non-native combo route", async () => {
+    const calls = [];
     const response = await handleComboChat({
       body: {
         input: [{ content: [{ type: "encrypted_content", encrypted_content: "enc_payload" }] }],
       },
       models: ["fm/gpt-5.6-terra"],
-      handleSingleModel: async () => new Response("unexpected"),
+      handleSingleModel: async (_body, model) => {
+        calls.push(model);
+        return new Response("ok");
+      },
       log: { info() {}, warn() {} },
       comboName: "codex",
       comboStrategy: "fallback",
     });
 
-    expect(response.status).toBe(409);
-    await expect(response.json()).resolves.toMatchObject({
-      error: { code: "codex_responses_route_unavailable" },
-    });
+    expect(response.ok).toBe(true);
+    expect(calls).toEqual(["fm/gpt-5.6-terra"]);
   });
 });

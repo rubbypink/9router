@@ -1,8 +1,9 @@
 // Guards forceStream moved from chatCore hardcode → PROVIDERS schema (#5).
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { executeMock } = vi.hoisted(() => ({
+const { executeMock, refreshWithRetryMock } = vi.hoisted(() => ({
   executeMock: vi.fn(),
+  refreshWithRetryMock: vi.fn(),
 }));
 
 vi.mock("../../open-sse/executors/index.js", () => ({
@@ -39,7 +40,7 @@ vi.mock("../../open-sse/utils/streamHandler.js", () => ({
 }));
 
 vi.mock("../../open-sse/services/tokenRefresh.js", () => ({
-  refreshWithRetry: vi.fn(),
+  refreshWithRetry: refreshWithRetryMock,
 }));
 
 vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
@@ -71,6 +72,8 @@ vi.mock("../../open-sse/rtk/index.js", () => ({
 vi.mock("../../open-sse/rtk/headroom.js", () => ({
   compressWithHeadroom: vi.fn(async () => null),
   formatHeadroomLog: vi.fn(() => ""),
+  formatHeadroomSizeLog: vi.fn(() => ""),
+  isHeadroomPhantomSavings: vi.fn(() => false),
 }));
 
 vi.mock("../../open-sse/providers/capabilities.js", () => ({
@@ -92,8 +95,9 @@ vi.mock("../../open-sse/handlers/chatCore/requestDetail.js", () => ({
 
 vi.mock("../../open-sse/utils/error.js", () => ({
   createErrorResult: vi.fn((status, message) => ({ success: false, status, error: message })),
+  createTypedErrorResult: vi.fn((status, message) => ({ success: false, status, error: message })),
   formatProviderError: vi.fn((error) => error.message),
-  parseUpstreamError: vi.fn(),
+  parseUpstreamError: vi.fn(async (response) => ({ statusCode: response.status, message: `HTTP ${response.status}` })),
 }));
 
 vi.mock("@/lib/usageDb.js", () => ({
@@ -129,6 +133,7 @@ describe("forceStream provider config", () => {
   beforeEach(() => {
     executeMock.mockReset();
     executeMock.mockRejectedValue(new Error("boom"));
+    refreshWithRetryMock.mockReset();
   });
 
   it("only openai/codex/commandcode force streaming", async () => {
@@ -149,5 +154,21 @@ describe("forceStream provider config", () => {
 
     expect(executeMock).toHaveBeenCalledTimes(1);
     expect(executeMock.mock.calls[0][0].stream).toBe(true);
+  });
+
+  it("returns a concrete auth error without refreshing and retrying the same account", async () => {
+    executeMock.mockResolvedValue({
+      response: new Response("unauthorized", { status: 401 }),
+      url: "https://provider.test/v1/responses",
+      headers: {},
+      transformedBody: {},
+    });
+    const { handleChatCore } = await import("../../open-sse/handlers/chatCore.js");
+
+    const result = await handleChatCore(makeOptions(false));
+
+    expect(result.status).toBe(401);
+    expect(executeMock).toHaveBeenCalledTimes(1);
+    expect(refreshWithRetryMock).not.toHaveBeenCalled();
   });
 });

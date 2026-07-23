@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({
   connections: [],
   settings: {},
-  claim: vi.fn(),
   updateConnection: vi.fn(),
 }));
 
@@ -48,10 +47,6 @@ vi.mock("@/shared/constants/providers.js", () => ({
   resolveProviderId: (provider) => provider,
 }));
 
-vi.mock("@/lib/db/repos/threadRoutesRepo.js", () => ({
-  selectNextSessionAffinityConnection: (...args) => state.claim(...args),
-}));
-
 import { getProviderCredentials } from "../../src/sse/services/auth.js";
 
 function connection(id, priority, extra = {}) {
@@ -69,68 +64,116 @@ function connection(id, priority, extra = {}) {
 beforeEach(() => {
   state.connections = [connection("account-a", 1), connection("account-b", 2)];
   state.settings = { fallbackStrategy: "round-robin", stickyRoundRobinLimit: 3 };
-  state.updateConnection.mockReset().mockResolvedValue(null);
-  state.claim.mockReset();
+  state.updateConnection.mockReset().mockImplementation(async (id, update) => {
+    const item = state.connections.find((candidate) => candidate.id === id);
+    if (!item) return null;
+    Object.assign(item, update);
+    return item;
+  });
 });
 
 describe("session-aware authentication selection", () => {
-  it("uses strict persistent A/B/A selection for new affinity sessions", async () => {
-    state.claim
-      .mockImplementationOnce((_provider, eligible) => eligible[0])
-      .mockImplementationOnce((_provider, eligible) => eligible[1])
-      .mockImplementationOnce((_provider, eligible) => eligible[0]);
-
+  it("uses provider fill-first config independently for each new thread", async () => {
+    state.settings = { fallbackStrategy: "fill-first" };
     await expect(getProviderCredentials("codex", null, "gpt", { sessionKey: "session-1" })).resolves.toMatchObject({ connectionId: "account-a" });
-    await expect(getProviderCredentials("codex", null, "gpt", { sessionKey: "session-2" })).resolves.toMatchObject({ connectionId: "account-b" });
-    await expect(getProviderCredentials("codex", null, "gpt", { sessionKey: "session-3" })).resolves.toMatchObject({ connectionId: "account-a" });
+    await expect(getProviderCredentials("codex", null, "gpt", { sessionKey: "session-2" })).resolves.toMatchObject({ connectionId: "account-a" });
   });
 
-  it("hands the cursor connections ordered by priority then ID", async () => {
-    state.connections = [connection("account-b", 1), connection("account-a", 1)];
-    state.claim.mockImplementation((_provider, eligible) => eligible[0]);
-
-    await getProviderCredentials("codex", null, "gpt", { sessionKey: "session-1" });
-
-    expect(state.claim).toHaveBeenCalledWith("codex", [expect.objectContaining({ id: "account-a" }), expect.objectContaining({ id: "account-b" })]);
-  });
-
-  it("bypasses the cursor for an already-bound eligible account", async () => {
+  it("uses an already-bound eligible account before the provider strategy", async () => {
     await expect(getProviderCredentials("codex", null, "gpt", {
       sessionKey: "session-1",
       preferredConnectionId: "account-b",
     })).resolves.toMatchObject({ connectionId: "account-b" });
-
-    expect(state.claim).not.toHaveBeenCalled();
   });
 
-  it("retains legacy sticky round robin for sessionless traffic", async () => {
+  it("applies sticky round robin to a new thread", async () => {
     state.connections = [
       connection("account-a", 1, { lastUsedAt: "2026-07-22T00:00:00.000Z", consecutiveUseCount: 1 }),
       connection("account-b", 2),
     ];
 
-    await expect(getProviderCredentials("codex", null, "gpt")).resolves.toMatchObject({ connectionId: "account-a" });
-    expect(state.claim).not.toHaveBeenCalled();
+    await expect(getProviderCredentials("codex", null, "gpt", { sessionKey: "session-1" })).resolves.toMatchObject({ connectionId: "account-a" });
     expect(state.updateConnection).toHaveBeenCalledWith("account-a", expect.objectContaining({ consecutiveUseCount: 2 }));
   });
 
-  it("keeps sessionless sticky limits when the current account is exhausted", async () => {
+  it("rotates a new thread when the configured sticky limit is exhausted", async () => {
     state.connections = [
       connection("account-a", 1, { lastUsedAt: "2026-07-22T00:00:00.000Z", consecutiveUseCount: 3 }),
       connection("account-b", 2),
     ];
 
-    await expect(getProviderCredentials("codex", null, "gpt")).resolves.toMatchObject({ connectionId: "account-b" });
-    expect(state.claim).not.toHaveBeenCalled();
+    await expect(getProviderCredentials("codex", null, "gpt", { sessionKey: "session-2" })).resolves.toMatchObject({ connectionId: "account-b" });
   });
 
-  it("does not use sticky limits for an unbound affinity session", async () => {
+  it("skips a persisted connection error before applying provider strategy", async () => {
+    state.settings = { fallbackStrategy: "fill-first" };
     state.connections = [
-      connection("account-a", 1, { lastUsedAt: "2026-07-22T00:00:00.000Z", consecutiveUseCount: 3 }),
+      connection("account-a", 1, { testStatus: "error", lastError: "credentials rejected" }),
       connection("account-b", 2),
     ];
-    state.claim.mockImplementation((_provider, eligible) => eligible[1]);
 
-    await expect(getProviderCredentials("codex", null, "gpt", { sessionKey: "session-1" })).resolves.toMatchObject({ connectionId: "account-b" });
+    await expect(getProviderCredentials("codex", null, "gpt", { sessionKey: "session-error" })).resolves.toMatchObject({ connectionId: "account-b" });
+  });
+
+  it("skips a persisted unavailable connection even when no model lock remains", async () => {
+    state.settings = { fallbackStrategy: "fill-first" };
+    state.connections = [
+      connection("account-a", 1, { testStatus: "unavailable" }),
+      connection("account-b", 2),
+    ];
+
+    await expect(getProviderCredentials("codex", null, "gpt", { sessionKey: "session-unavailable" })).resolves.toMatchObject({ connectionId: "account-b" });
+  });
+
+  it("skips a connection with a persisted quota error before dispatch", async () => {
+    state.settings = { fallbackStrategy: "fill-first" };
+    state.connections = [
+      connection("account-a", 1, { testStatus: "active", lastError: "Account is out of credits" }),
+      connection("account-b", 2),
+    ];
+
+    await expect(getProviderCredentials("codex", null, "gpt", { sessionKey: "session-credits" })).resolves.toMatchObject({ connectionId: "account-b" });
+  });
+
+  it("skips persisted account health quota state even when a flat lock is missing", async () => {
+    state.settings = { fallbackStrategy: "fill-first" };
+    state.connections = [
+      connection("account-a", 1, {
+        accountHealth: {
+          version: 2,
+          models: {
+            gpt: {
+              state: "unavailable",
+              reason: "quota",
+              retryAt: new Date(Date.now() + 60_000).toISOString(),
+            },
+          },
+        },
+      }),
+      connection("account-b", 2),
+    ];
+
+    await expect(getProviderCredentials("codex", null, "gpt", { sessionKey: "session-quota" })).resolves.toMatchObject({ connectionId: "account-b" });
+  });
+
+  it("keeps an unavailable account blocked when persisted health has no retry time", async () => {
+    state.settings = { fallbackStrategy: "fill-first" };
+    state.connections = [
+      connection("account-a", 1, {
+        accountHealth: {
+          version: 2,
+          models: {
+            gpt: {
+              state: "unavailable",
+              reason: "quota",
+              retryAt: null,
+            },
+          },
+        },
+      }),
+      connection("account-b", 2),
+    ];
+
+    await expect(getProviderCredentials("codex", null, "gpt", { sessionKey: "session-quota-no-retry" })).resolves.toMatchObject({ connectionId: "account-b" });
   });
 });

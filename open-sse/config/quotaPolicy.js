@@ -1,6 +1,5 @@
 export const REQUEST_EXECUTION_POLICY = Object.freeze({
   minEndpointIntervalMs: 2000,
-  maxUpstreamAttemptsPerRequest: 4,
 });
 
 export const QUOTA_FALLBACK_POLICY = Object.freeze({

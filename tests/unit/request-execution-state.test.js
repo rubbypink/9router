@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
-  UPSTREAM_ATTEMPT_LIMIT_CODE,
   beforeUpstreamRequest,
   createUpstreamRequestState,
   resetUpstreamExecutionStateForTests,
@@ -36,23 +35,16 @@ describe("upstream request execution state", () => {
     expect(state.attempts).toBe(2);
   });
 
-  it("stops a logical request before a fifth provider attempt", async () => {
+  it("allows every provider attempt selected by configured routing", async () => {
     const state = createUpstreamRequestState({ minEndpointIntervalMs: 0 });
 
     await runWithUpstreamRequestState(state, async () => {
-      for (let attempt = 0; attempt < 4; attempt++) {
+      for (let attempt = 0; attempt < 5; attempt++) {
         await runAsUpstreamDispatch("openai", () => beforeUpstreamRequest(providerEndpoint), [providerEndpoint]);
       }
-      await expect(runAsUpstreamDispatch(
-        "openai",
-        () => beforeUpstreamRequest(providerEndpoint),
-        [providerEndpoint],
-      )).rejects.toMatchObject({
-        code: UPSTREAM_ATTEMPT_LIMIT_CODE,
-        attempts: 4,
-        maxAttempts: 4,
-      });
     });
+
+    expect(state.attempts).toBe(5);
   });
 
   it("does not charge provider attempt budget for a media prefetch origin", async () => {

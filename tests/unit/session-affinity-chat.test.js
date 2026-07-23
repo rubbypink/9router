@@ -9,11 +9,13 @@ const mocks = vi.hoisted(() => ({
   extractApiKey: vi.fn(() => null),
   getComboModels: vi.fn(),
   getModelInfo: vi.fn(),
+  getProviderModelAvailability: vi.fn(),
   getProviderCredentials: vi.fn(),
   getSettings: vi.fn(),
   getConnectionBinding: vi.fn(),
   handleBypassRequest: vi.fn(),
   handleChatCore: vi.fn(),
+  handleFusionChat: vi.fn(),
   isCodexThreadAffinityEnabled: vi.fn(),
   isValidApiKey: vi.fn(),
   markAccountUnavailable: vi.fn(),
@@ -26,6 +28,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("open-sse/index.js", () => ({}));
 vi.mock("../../src/sse/services/auth.js", () => ({
   getProviderCredentials: mocks.getProviderCredentials,
+  getProviderModelAvailability: mocks.getProviderModelAvailability,
   markAccountUnavailable: mocks.markAccountUnavailable,
   clearAccountError: mocks.clearAccountError,
   extractApiKey: mocks.extractApiKey,
@@ -48,7 +51,7 @@ vi.mock("open-sse/utils/error.js", () => ({
 }));
 vi.mock("open-sse/services/combo.js", async (importOriginal) => ({
   ...await importOriginal(),
-  handleFusionChat: vi.fn(),
+  handleFusionChat: mocks.handleFusionChat,
 }));
 vi.mock("open-sse/utils/bypassHandler.js", () => ({ handleBypassRequest: mocks.handleBypassRequest }));
 vi.mock("open-sse/config/runtimeConfig.js", async (importOriginal) => {
@@ -115,6 +118,7 @@ describe("session affinity chat fallback", () => {
         providerSpecificData: {},
       })
       .mockResolvedValue(null);
+    mocks.getProviderModelAvailability.mockResolvedValue({ available: true });
     mocks.checkAndRefreshToken.mockImplementation(async (_provider, credentials) => credentials);
     mocks.handleChatCore.mockResolvedValue({
       success: false,
@@ -128,45 +132,7 @@ describe("session affinity chat fallback", () => {
     mocks.runWithUpstreamRequestState.mockImplementation(async (_state, operation) => operation());
   });
 
-  it("returns a bound model-not-found response without reselecting an affinity route", async () => {
-    const request = new Request("http://router.test/v1/chat/completions", {
-      method: "POST",
-      headers: { "content-type": "application/json", "thread-id": "thread-404" },
-      body: JSON.stringify({ model: "openai/gpt-test", messages: [] }),
-    });
-
-    const response = await handleChat(request);
-
-    expect(response.status).toBe(404);
-    await expect(response.text()).resolves.toBe("provider model not found");
-    expect(mocks.getProviderCredentials).toHaveBeenCalledTimes(1);
-    expect(mocks.getProviderCredentials).toHaveBeenLastCalledWith(
-      "openai",
-      expect.any(Set),
-      "gpt-test",
-      { preferredConnectionId: boundConnection, sessionKey: "session-affinity-chat" },
-    );
-    expect(mocks.markAccountUnavailable).not.toHaveBeenCalled();
-    expect(mocks.bindRoute).toHaveBeenCalledWith(
-      "session-affinity-chat",
-      "openai/gpt-test",
-      expect.objectContaining({ connectionId: boundConnection }),
-      { allowRebind: false, rebindReason: null },
-    );
-    expect(binding).toMatchObject({ connectionId: boundConnection, routeEpoch: 7 });
-  });
-
-  it("does not rebind a pinned combo after its bound model returns 404", async () => {
-    const pinnedBinding = {
-      ...binding,
-      model: "openai/gpt-bound",
-      resolvedModel: "openai/gpt-bound",
-    };
-    mocks.getComboModels.mockResolvedValue(["openai/gpt-bound", "anthropic/gpt-fallback"]);
-    mocks.getModelInfo.mockImplementation(async (model) => {
-      const [provider, modelName] = model.split("/");
-      return { provider, model: modelName };
-    });
+  it("switches accounts and rebinds after the pinned account returns model-not-found", async () => {
     mocks.getProviderCredentials
       .mockReset()
       .mockResolvedValueOnce({
@@ -188,11 +154,78 @@ describe("session affinity chat fallback", () => {
         status: 404,
         error: "Model not found",
         errorCode: "model_not_found",
+        response: new Response("provider model not found", { status: 404 }),
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        response: new Response("fallback account ok"),
+      });
+    const request = new Request("http://router.test/v1/chat/completions", {
+      method: "POST",
+      headers: { "content-type": "application/json", "thread-id": "thread-404" },
+      body: JSON.stringify({ model: "openai/gpt-test", messages: [] }),
+    });
+
+    const response = await handleChat(request);
+
+    expect(response.status).toBe(200);
+    await expect(response.text()).resolves.toBe("fallback account ok");
+    expect(mocks.getProviderCredentials).toHaveBeenCalledTimes(2);
+    expect(mocks.getProviderCredentials).toHaveBeenNthCalledWith(
+      1,
+      "openai",
+      expect.any(Set),
+      "gpt-test",
+      { preferredConnectionId: boundConnection, sessionKey: "session-affinity-chat" },
+    );
+    expect(mocks.markAccountUnavailable).toHaveBeenCalledTimes(1);
+    expect(mocks.bindRoute).toHaveBeenLastCalledWith(
+      "session-affinity-chat",
+      "openai/gpt-test",
+      expect.objectContaining({ connectionId: "connection-fallback" }),
+      { allowRebind: true, rebindReason: "retryable_provider_failure" },
+    );
+    expect(binding).toMatchObject({ connectionId: boundConnection, routeEpoch: 7 });
+  });
+
+  it("falls back and rebinds a pinned combo after its bound model returns 404", async () => {
+    const pinnedBinding = {
+      ...binding,
+      model: "openai/gpt-bound",
+      resolvedModel: "openai/gpt-bound",
+    };
+    mocks.getComboModels.mockResolvedValue(["openai/gpt-bound", "anthropic/gpt-fallback"]);
+    mocks.getModelInfo.mockImplementation(async (model) => {
+      const [provider, modelName] = model.split("/");
+      return { provider, model: modelName };
+    });
+    mocks.getProviderCredentials
+      .mockReset()
+      .mockResolvedValueOnce({
+        connectionId: boundConnection,
+        connectionName: "bound-account",
+        accessToken: "test-token",
+        providerSpecificData: {},
+      })
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        connectionId: "connection-fallback",
+        connectionName: "fallback-account",
+        accessToken: "fallback-token",
+        providerSpecificData: {},
+      });
+    mocks.handleChatCore
+      .mockReset()
+      .mockResolvedValueOnce({
+        success: false,
+        status: 404,
+        error: "Model not found",
+        errorCode: "model_not_found",
         response: new Response("pinned combo model not found", { status: 404 }),
       })
       .mockResolvedValueOnce({
         success: true,
-        response: new Response("unexpected combo fallback"),
+        response: new Response("combo fallback"),
       });
     mocks.run.mockImplementation(async (_identity, _model, operation) => operation({ ...pinnedBinding }));
     const request = new Request("http://router.test/v1/chat/completions", {
@@ -203,17 +236,37 @@ describe("session affinity chat fallback", () => {
 
     const response = await handleChat(request);
 
-    expect(response.status).toBe(404);
-    await expect(response.text()).resolves.toBe("pinned combo model not found");
-    expect(mocks.getProviderCredentials).toHaveBeenCalledTimes(1);
-    expect(mocks.handleChatCore).toHaveBeenCalledTimes(1);
-    expect(mocks.bindRoute).toHaveBeenCalledTimes(1);
+    expect(response.status).toBe(200);
+    await expect(response.text()).resolves.toBe("combo fallback");
+    expect(mocks.getProviderCredentials).toHaveBeenCalledTimes(3);
+    expect(mocks.handleChatCore).toHaveBeenCalledTimes(2);
+    expect(mocks.bindRoute).toHaveBeenCalledTimes(2);
     expect(mocks.bindRoute).toHaveBeenLastCalledWith(
       "session-affinity-chat",
       "pinned-combo",
-      expect.objectContaining({ connectionId: boundConnection }),
-      { allowRebind: false, rebindReason: null },
+      expect.objectContaining({ connectionId: "connection-fallback" }),
+      { allowRebind: true, rebindReason: "combo_eligible_fallback" },
     );
     expect(pinnedBinding).toMatchObject({ connectionId: boundConnection, routeEpoch: 7 });
+  });
+
+  it("runs a fusion combo inside the affinity lane instead of rejecting it", async () => {
+    mocks.getSettings.mockResolvedValue({
+      requireApiKey: false,
+      comboStrategies: { "fusion-combo": { fallbackStrategy: "fusion" } },
+    });
+    mocks.getComboModels.mockResolvedValue(["openai/gpt-test", "anthropic/claude-test"]);
+    mocks.handleFusionChat.mockResolvedValue(new Response("fusion ok"));
+    const request = new Request("http://router.test/v1/responses", {
+      method: "POST",
+      headers: { "content-type": "application/json", "thread-id": "thread-fusion" },
+      body: JSON.stringify({ model: "fusion-combo", input: "hello" }),
+    });
+
+    const response = await handleChat(request);
+
+    expect(response.status).toBe(200);
+    await expect(response.text()).resolves.toBe("fusion ok");
+    expect(mocks.handleFusionChat).toHaveBeenCalledTimes(1);
   });
 });

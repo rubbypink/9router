@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { BaseExecutor } from "../../open-sse/executors/base.js";
 import { CodexExecutor } from "../../open-sse/executors/codex.js";
 
 function streamFromText(text) {
@@ -50,6 +51,28 @@ describe("Codex fast tier and capacity handling", () => {
     const peek = await executor._peekSseTransientError(response);
     expect(peek.accountFallback).toBe(true);
     expect(peek.message).toBe("Selected model is at capacity. Please try a different model.");
+  });
+
+  it("returns an explicit overloaded SSE error without retrying the same account", async () => {
+    const executor = new CodexExecutor();
+    const execute = vi.spyOn(BaseExecutor.prototype, "execute").mockResolvedValue({
+      response: new Response(streamFromText([
+        "event: error",
+        'data: {"error":{"message":"server_is_overloaded"}}',
+        "",
+      ].join("\n")), {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    });
+
+    try {
+      const result = await executor.execute({ body: { input: [] }, log: { debug() {}, warn() {} } });
+      expect(result.response.status).toBe(503);
+      expect(execute).toHaveBeenCalledTimes(1);
+    } finally {
+      execute.mockRestore();
+    }
   });
 
   it("reassembles normal SSE after peeking", async () => {

@@ -4,6 +4,7 @@ import { FORMATS } from "../../open-sse/translator/formats.js";
 import { getUnsupportedResponsesAdapterFeatures } from "../../open-sse/translator/concerns/toolNamespace.js";
 import { openAICompletionToResponsesResponse } from "../../open-sse/handlers/chatCore/nonStreamingHandler.js";
 import { openaiResponsesToOpenAIRequest } from "../../open-sse/translator/request/openai-responses.js";
+import { translateRequest } from "../../open-sse/translator/index.js";
 
 describe("Responses chat-adapter contract", () => {
   it("rejects stateful and non-degradable hosted features instead of silently dropping them", () => {
@@ -49,7 +50,86 @@ describe("Responses chat-adapter contract", () => {
     }]);
   });
 
-  it("still rejects unknown include fields and opaque encrypted message content", () => {
+  it("keeps the reasoning summary but strips opaque continuity from non-Responses providers", () => {
+    const translated = translateRequest(
+      FORMATS.OPENAI_RESPONSES,
+      FORMATS.OPENAI,
+      "gpt-compatible",
+      {
+        input: [
+          {
+            type: "reasoning",
+            summary: [{ type: "summary_text", text: "prior summary" }],
+            encrypted_content: "opaque_blob",
+          },
+          {
+            type: "function_call",
+            call_id: "call_1",
+            name: "inspect",
+            arguments: "{}",
+          },
+          {
+            type: "function_call_output",
+            call_id: "call_1",
+            output: "done",
+          },
+          {
+            type: "message",
+            role: "user",
+            content: [{ type: "input_text", text: "continue" }],
+          },
+        ],
+      },
+      true,
+      {},
+      "openai-compatible-chat",
+    );
+
+    expect(JSON.stringify(translated)).not.toContain("opaque_blob");
+    expect(JSON.stringify(translated)).not.toContain("encrypted_content");
+    expect(translated.messages.find((message) => message.role === "assistant")?.reasoning_content).toBe("prior summary");
+  });
+
+  it("preserves opaque continuity on native Responses providers", () => {
+    const body = {
+      input: [{ type: "reasoning", summary: [], encrypted_content: "native_blob" }],
+    };
+    const translated = translateRequest(
+      FORMATS.OPENAI_RESPONSES,
+      FORMATS.OPENAI_RESPONSES,
+      "gpt-native",
+      structuredClone(body),
+      true,
+      {},
+      "codex",
+    );
+
+    expect(translated.input[0].encrypted_content).toBe("native_blob");
+  });
+
+  it("strips opaque continuity from chat-shaped input sent to non-Responses providers", () => {
+    const translated = translateRequest(
+      FORMATS.OPENAI,
+      FORMATS.OPENAI,
+      "gpt-compatible",
+      {
+        messages: [{
+          role: "assistant",
+          content: "prior answer",
+          reasoning_content: "safe summary",
+          reasoning_encrypted_content: "opaque_alias",
+        }],
+      },
+      true,
+      {},
+      "openai-compatible-chat",
+    );
+
+    expect(JSON.stringify(translated)).not.toContain("opaque_alias");
+    expect(translated.messages[0].reasoning_content).toBe("safe summary");
+  });
+
+  it("degrades opaque encrypted message content without blocking a chat adapter", () => {
     expect(getUnsupportedResponsesAdapterFeatures({
       include: ["web_search_call.action.sources"],
       input: [{
@@ -57,7 +137,30 @@ describe("Responses chat-adapter contract", () => {
         role: "user",
         content: [{ type: "encrypted_content", encrypted_content: "enc_payload" }],
       }],
-    })).toEqual(["include", "input[0].content[0].type:encrypted_content"]);
+    })).toEqual(["include"]);
+
+    const translated = translateRequest(
+      FORMATS.OPENAI_RESPONSES,
+      FORMATS.OPENAI,
+      "gpt-compatible",
+      {
+        input: [{
+          type: "message",
+          role: "user",
+          content: [
+            { type: "input_text", text: "continue the task" },
+            { type: "encrypted_content", encrypted_content: "enc_payload" },
+          ],
+        }],
+      },
+      true,
+      {},
+      "openai-compatible-chat",
+    );
+
+    expect(JSON.stringify(translated)).not.toContain("encrypted_content");
+    expect(JSON.stringify(translated)).not.toContain("enc_payload");
+    expect(translated.messages[0].content).toEqual([{ type: "text", text: "continue the task" }]);
   });
 
   it("accepts namespace-wrapped function tools on a chat adapter", () => {

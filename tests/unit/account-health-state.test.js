@@ -165,4 +165,176 @@ describe("account health state", () => {
       source: "fallback-policy",
     });
   });
+
+  it("clears stale Codex quota state when provider usage reports reset capacity", async () => {
+    const retryAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const account = connection({
+      "modelLock_gpt-5.6": retryAt,
+      testStatus: "unavailable",
+      lastError: "usage quota exhausted",
+      lastErrorAt: new Date().toISOString(),
+      errorCode: "usage_limit_reached",
+      backoffLevel: 2,
+      accountHealth: {
+        version: 2,
+        updatedAt: new Date().toISOString(),
+        models: {
+          "gpt-5.6": {
+            state: "unavailable",
+            reason: "quota",
+            retryAt,
+          },
+        },
+        recentErrors: [],
+      },
+    });
+    state.connections.push(account);
+    const { reconcileProviderQuotaState } = await import("../../src/sse/services/auth.js");
+
+    await reconcileProviderQuotaState(account, {
+      limitReached: false,
+      quotas: {
+        session: { used: 25, total: 100, remaining: 75, resetAt: retryAt },
+        weekly: { used: 40, total: 100, remaining: 60, resetAt: retryAt },
+      },
+    });
+
+    expect(account["modelLock_gpt-5.6"]).toBeNull();
+    expect(account).toMatchObject({
+      testStatus: "active",
+      lastError: null,
+      lastErrorAt: null,
+      errorCode: null,
+      backoffLevel: 0,
+      accountHealth: { models: {} },
+    });
+  });
+
+  it("reconciles exact Antigravity model buckets without clearing a still-exhausted sibling", async () => {
+    const oldRetryAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const providerRetryAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+    const account = connection({
+      provider: "antigravity",
+      "modelLock_gemini-3.5-flash-low": oldRetryAt,
+      "modelLock_claude-opus-4-6-thinking": oldRetryAt,
+      testStatus: "unavailable",
+      lastError: "quota exhausted",
+      accountHealth: {
+        version: 2,
+        updatedAt: new Date().toISOString(),
+        models: {
+          "gemini-3.5-flash-low": { state: "unavailable", reason: "quota", retryAt: oldRetryAt },
+          "claude-opus-4-6-thinking": { state: "unavailable", reason: "quota", retryAt: oldRetryAt },
+        },
+        recentErrors: [],
+      },
+    });
+    state.connections.push(account);
+    const { reconcileProviderQuotaState } = await import("../../src/sse/services/auth.js");
+
+    await reconcileProviderQuotaState(account, {
+      quotas: {
+        "gemini-3.5-flash-low": { total: 1000, remainingPercentage: 35, resetAt: providerRetryAt },
+        "claude-opus-4-6-thinking": { total: 1000, remainingPercentage: 0, resetAt: providerRetryAt },
+      },
+    });
+
+    expect(account["modelLock_gemini-3.5-flash-low"]).toBeNull();
+    expect(account["modelLock_claude-opus-4-6-thinking"]).toBe(providerRetryAt);
+    expect(account.accountHealth.models).not.toHaveProperty("gemini-3.5-flash-low");
+    expect(account.accountHealth.models["claude-opus-4-6-thinking"]).toMatchObject({
+      state: "unavailable",
+      reason: "quota",
+      retryAt: providerRetryAt,
+      source: "provider-usage",
+    });
+  });
+
+  it("tracks and clears Claude family quota without hiding healthy model families", async () => {
+    const retryAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+    const account = connection({ provider: "claude" });
+    state.connections.push(account);
+    const { getProviderModelAvailability, reconcileProviderQuotaState } = await import("../../src/sse/services/auth.js");
+
+    await reconcileProviderQuotaState(account, {
+      quotas: {
+        "session (5h)": { remainingPercentage: 80, resetAt: retryAt },
+        "weekly (7d)": { remainingPercentage: 60, resetAt: retryAt },
+        "weekly sonnet (7d)": { remainingPercentage: 0, resetAt: retryAt },
+        "weekly opus (7d)": { remainingPercentage: 40, resetAt: retryAt },
+      },
+    });
+
+    expect(account["modelLock___family:sonnet"]).toBe(retryAt);
+    await expect(getProviderModelAvailability("claude", "claude-sonnet-5")).resolves.toMatchObject({
+      available: false,
+      reason: "quota",
+      retryAfter: retryAt,
+    });
+    await expect(getProviderModelAvailability("claude", "claude-opus-4-8")).resolves.toEqual({ available: true });
+
+    await reconcileProviderQuotaState(account, {
+      quotas: {
+        "session (5h)": { remainingPercentage: 90, resetAt: retryAt },
+        "weekly (7d)": { remainingPercentage: 75, resetAt: retryAt },
+        "weekly sonnet (7d)": { remainingPercentage: 50, resetAt: retryAt },
+        "weekly opus (7d)": { remainingPercentage: 40, resetAt: retryAt },
+      },
+    });
+
+    expect(account["modelLock___family:sonnet"]).toBeNull();
+    expect(account).toMatchObject({
+      testStatus: "active",
+      lastError: null,
+      accountHealth: { models: {} },
+    });
+  });
+
+  it("exposes provider-model availability without letting one model quota hide healthy siblings", async () => {
+    const retryAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    state.connections.push(
+      connection({
+        id: "conn-1",
+        provider: "antigravity",
+        "modelLock_model-a": retryAt,
+        rateLimitedUntil: retryAt,
+        testStatus: "unavailable",
+        lastError: "quota exhausted for model-a",
+        accountHealth: {
+          version: 2,
+          updatedAt: new Date().toISOString(),
+          models: {
+            "model-a": { state: "unavailable", reason: "quota", retryAt },
+          },
+          recentErrors: [],
+        },
+      }),
+      connection({
+        id: "conn-2",
+        provider: "antigravity",
+        "modelLock_model-a": retryAt,
+        rateLimitedUntil: retryAt,
+        testStatus: "unavailable",
+        lastError: "quota exhausted for model-a",
+        accountHealth: {
+          version: 2,
+          updatedAt: new Date().toISOString(),
+          models: {
+            "model-a": { state: "unavailable", reason: "quota", retryAt },
+          },
+          recentErrors: [],
+        },
+      }),
+    );
+    const { getProviderModelAvailability } = await import("../../src/sse/services/auth.js");
+
+    await expect(getProviderModelAvailability("antigravity", "model-a")).resolves.toMatchObject({
+      available: false,
+      reason: "quota",
+      retryAfter: retryAt,
+    });
+    await expect(getProviderModelAvailability("antigravity", "model-b")).resolves.toEqual({
+      available: true,
+    });
+  });
 });

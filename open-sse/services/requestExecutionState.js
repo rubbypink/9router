@@ -4,31 +4,13 @@ import {
   resolveQuotaPolicy,
 } from "../config/quotaPolicy.js";
 
-export const UPSTREAM_ATTEMPT_LIMIT_CODE = "upstream_attempt_budget_exhausted";
-
 const requestStorage = new AsyncLocalStorage();
 const endpointStates = new Map();
 const MAX_ENDPOINT_STATES = 2048;
 const runtimeState = {
   activeLogicalRequests: 0,
   waitingEndpointStarts: 0,
-  rejectedAttempts: 0,
 };
-
-export class UpstreamAttemptLimitError extends Error {
-  constructor({ attempts, maxAttempts }) {
-    super(`Upstream attempt budget exhausted (${attempts}/${maxAttempts})`);
-    this.name = "UpstreamAttemptLimitError";
-    this.code = UPSTREAM_ATTEMPT_LIMIT_CODE;
-    this.status = 503;
-    this.attempts = attempts;
-    this.maxAttempts = maxAttempts;
-  }
-}
-
-export function isUpstreamExecutionControlError(error) {
-  return error?.code === UPSTREAM_ATTEMPT_LIMIT_CODE;
-}
 
 function defaultSleep(ms, signal) {
   if (ms <= 0) return Promise.resolve();
@@ -111,7 +93,6 @@ async function paceEndpointStart(input, { intervalMs, now, sleep, signal }) {
 export function createUpstreamRequestState(overrides = {}) {
   return {
     attempts: 0,
-    maxAttempts: overrides.maxAttempts ?? REQUEST_EXECUTION_POLICY.maxUpstreamAttemptsPerRequest,
     minEndpointIntervalMs: overrides.minEndpointIntervalMs ?? REQUEST_EXECUTION_POLICY.minEndpointIntervalMs,
     now: overrides.now || Date.now,
     sleep: overrides.sleep || defaultSleep,
@@ -148,13 +129,6 @@ export async function beforeUpstreamRequest(input, { signal } = {}) {
   const inputOrigin = endpointOrigin(input);
   const isProviderEndpoint = !store?.dispatchOrigins?.size || store.dispatchOrigins.has(inputOrigin);
   if (requestState && store.activeProvider && isProviderEndpoint) {
-    if (requestState.attempts >= requestState.maxAttempts) {
-      runtimeState.rejectedAttempts++;
-      throw new UpstreamAttemptLimitError({
-        attempts: requestState.attempts,
-        maxAttempts: requestState.maxAttempts,
-      });
-    }
     requestState.attempts++;
     requestState.lastEndpoint = canonicalEndpointKey(input);
     requestState.lastProvider = store.activeProvider;
@@ -174,7 +148,6 @@ export function getUpstreamExecutionSnapshot() {
     ...runtimeState,
     trackedEndpoints: endpointStates.size,
     minEndpointIntervalMs: REQUEST_EXECUTION_POLICY.minEndpointIntervalMs,
-    maxUpstreamAttemptsPerRequest: REQUEST_EXECUTION_POLICY.maxUpstreamAttemptsPerRequest,
   };
 }
 
@@ -182,5 +155,4 @@ export function resetUpstreamExecutionStateForTests() {
   endpointStates.clear();
   runtimeState.activeLogicalRequests = 0;
   runtimeState.waitingEndpointStarts = 0;
-  runtimeState.rejectedAttempts = 0;
 }

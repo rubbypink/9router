@@ -8,6 +8,7 @@ import { applyThinking, captureThinking } from "./concerns/thinkingUnified.js";
 import { captureSessionId } from "../utils/sessionManager.js";
 import { AntigravityExecutor } from "../executors/antigravity.js";
 import { PROVIDERS } from "../providers/index.js";
+import { stripOpaqueContinuity } from "./concerns/opaqueContinuity.js";
 
 // Registry for translators. Lazy-init guards against circular-import order:
 // translator modules call register() (side-effect) before this module's body runs.
@@ -59,6 +60,10 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
       delete result._responsesToolNameMap;
     }
   };
+
+  if (targetFormat !== FORMATS.OPENAI_RESPONSES) {
+    stripOpaqueContinuity(result);
+  }
 
   // Strip explicit content types (opt-in via strip[] in PROVIDER_MODELS entry)
   stripContentTypes(result, stripList);
@@ -154,6 +159,10 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
     const toolNameMap = result._toolNameMap instanceof Map ? result._toolNameMap : new Map();
     toolNameMap.responsesNamespaceMap = responsesNamespaceMap;
     result._toolNameMap = toolNameMap;
+  }
+
+  if (targetFormat !== FORMATS.OPENAI_RESPONSES) {
+    stripOpaqueContinuity(result);
   }
 
   // Antigravity cloaking disabled
