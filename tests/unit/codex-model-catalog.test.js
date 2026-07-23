@@ -53,9 +53,10 @@ describe("Codex model catalog", () => {
     expect(catalog.models[1].shell_type).toBe("shell_command");
     expect(catalog.models[1].tool_mode).toBe("direct");
     expect(catalog.models[1].apply_patch_tool_type).toBeNull();
-    expect(catalog.models[1].use_responses_lite).toBe(true);
+    expect(catalog.models[1].use_responses_lite).toBe(false);
+    expect(catalog.models[1].supports_search_tool).toBe(false);
     expect(catalog.models[1].visibility).toBe("list");
-    expect(CODEX_MODEL_CATALOG_CONTRACT_VERSION).toBe("9router-codex-model-catalog/v4");
+    expect(CODEX_MODEL_CATALOG_CONTRACT_VERSION).toBe("9router-codex-model-catalog/v5");
   });
 
   it("uses the retained catalog template before a regular upstream model", () => {

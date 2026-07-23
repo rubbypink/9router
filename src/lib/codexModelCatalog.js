@@ -10,7 +10,7 @@ import {
 } from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 
-export const CODEX_MODEL_CATALOG_CONTRACT_VERSION = "9router-codex-model-catalog/v4";
+export const CODEX_MODEL_CATALOG_CONTRACT_VERSION = "9router-codex-model-catalog/v5";
 export const CODEX_MODEL_CATALOG_TEMPLATE_SLUG = "__9router_catalog_template";
 
 const LLM_KIND = "llm";
@@ -153,6 +153,8 @@ function asComboModel(template, combo, index) {
     supports_reasoning_summaries: true,
     tool_mode: "direct",
     apply_patch_tool_type: null,
+    use_responses_lite: false,
+    supports_search_tool: false,
   };
 }
 

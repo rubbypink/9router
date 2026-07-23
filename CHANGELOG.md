@@ -1,3 +1,8 @@
+# v0.5.40-9trip.13 (2026-07-23)
+
+## Fixes
+- **Codex Desktop tools**: advertise combo models with top-level Responses tools and disable unsupported hosted tool search so Codex 0.146 executors and subagents can access shell, filesystem, and collaboration tools
+
 # v0.5.40-9trip.12 (2026-07-23)
 
 ## Fixes
