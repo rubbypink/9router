@@ -12,6 +12,14 @@ Two published artifacts live in this one repo:
 
 The code lives in `src/` (Next.js app + dashboard/compat APIs), `open-sse/` (the provider-agnostic routing/translation engine), `cli/` (the launcher package), and `tests/`.
 
+## Mandatory code-update delivery
+
+For every task that changes this project's code, complete the full delivery workflow before handoff:
+- Work on a task branch, validate the change, commit all task changes, and merge the task branch into `master`.
+- Build, install, and activate a new immutable local release, then verify live health and the original user scenario through the active runtime.
+- Do not stop at uncommitted source, an unmerged branch, or an inactive release candidate. Commit, merge, and local release activation are pre-approved for completed code updates and do not require a separate confirmation.
+- Pushing to a remote remains a separate action and still requires an explicit owner request.
+
 ## Commands
 
 Dashboard/gateway (run from repo root):

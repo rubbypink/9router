@@ -1,3 +1,9 @@
+# v0.5.40-9trip.9 (2026-07-23)
+
+## Fixes
+- **Codex Responses**: allow `text.verbosity` to degrade safely through chat adapters so subagents can dispatch on non-native combo models
+- **Workflow**: require completed code updates to be committed, merged into `master`, activated as an immutable local release, and verified live
+
 # v0.5.40-9trip.8 (2026-07-23)
 
 ## Fixes

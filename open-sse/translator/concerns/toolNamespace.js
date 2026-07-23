@@ -124,7 +124,6 @@ export function getUnsupportedResponsesAdapterFeatures(body) {
   if (body.previous_response_id !== undefined && body.previous_response_id !== null) unsupported.push("previous_response_id");
   if (body.store === true) unsupported.push("store");
   if (body.text?.format && body.text.format.type !== "text") unsupported.push("text.format");
-  if (body.text?.verbosity !== undefined && body.text.verbosity !== null) unsupported.push("text.verbosity");
   if (body.max_tool_calls !== undefined && body.max_tool_calls !== null) unsupported.push("max_tool_calls");
   if (body.prompt !== undefined && body.prompt !== null) unsupported.push("prompt");
   if (body.truncation !== undefined && body.truncation !== null && body.truncation !== "disabled") {

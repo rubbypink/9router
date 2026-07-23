@@ -178,7 +178,6 @@ describe("Responses chat-adapter contract", () => {
     const unsupported = getUnsupportedResponsesAdapterFeatures({
       max_tool_calls: 2,
       prompt: { id: "pmpt_1" },
-      text: { verbosity: "low" },
       truncation: "auto",
       input: [{
         type: "message",
@@ -195,9 +194,18 @@ describe("Responses chat-adapter contract", () => {
       "input[0].content[1].file_id",
       "max_tool_calls",
       "prompt",
-      "text.verbosity",
       "truncation:auto",
     ]);
+  });
+
+  it("allows Codex text verbosity to degrade on chat adapters", () => {
+    const body = {
+      text: { verbosity: "low" },
+      input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "inspect" }] }],
+    };
+
+    expect(getUnsupportedResponsesAdapterFeatures(body)).toEqual([]);
+    expect(openaiResponsesToOpenAIRequest("model", body, true, {})).not.toHaveProperty("text");
   });
 
   it("accepts adapter-safe text, remote images, and disabled truncation", () => {
