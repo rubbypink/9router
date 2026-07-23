@@ -81,6 +81,29 @@ describe("Antigravity → Claude", () => {
   });
 });
 
+describe("Antigravity → Codex Responses", () => {
+  it("emits response.completed after a tool-call stream flush", () => {
+    const state = initState(FORMATS.OPENAI_RESPONSES);
+    const chunkEvents = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.OPENAI_RESPONSES, {
+      response: {
+        responseId: "resp-tool-1",
+        modelVersion: "gemini-3.5-flash-low",
+        candidates: [{
+          content: {
+            role: "model",
+            parts: [{ functionCall: { id: "call-1", name: "exec_command", args: { cmd: "pwd" } } }],
+          },
+          finishReason: "STOP",
+          index: 0,
+        }],
+      },
+    }, state);
+    const flushedEvents = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.OPENAI_RESPONSES, null, state);
+
+    expect([...chunkEvents, ...flushedEvents].some((event) => event.event === "response.completed")).toBe(true);
+  });
+});
+
 describe("Antigravity executor", () => {
   it("strips optional from nested tool schemas", () => {
     const out = new AntigravityExecutor().transformRequest("gemini-2.5-pro", {

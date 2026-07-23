@@ -1,3 +1,8 @@
+# v0.5.40-9trip.14 (2026-07-23)
+
+## Fixes
+- **Codex tool continuation**: flush translated non-OpenAI provider streams through the OpenAI Responses hop so tool-call turns emit `response.completed` and executors continue after acknowledgements
+
 # v0.5.40-9trip.13 (2026-07-23)
 
 ## Fixes

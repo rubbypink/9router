@@ -246,6 +246,12 @@ export function translateResponse(targetFormat, sourceFormat, chunk, state) {
     }
   }
 
+  const needsResponsesFlush =
+    chunk == null &&
+    sourceFormat === FORMATS.OPENAI_RESPONSES &&
+    targetFormat !== FORMATS.OPENAI &&
+    !results.some((result) => result == null);
+
   // Step 2: openai -> source (if source is not openai)
   if (sourceFormat !== FORMATS.OPENAI) {
     const fromOpenAI = responseRegistry.get(`${FORMATS.OPENAI}:${sourceFormat}`);
@@ -253,6 +259,12 @@ export function translateResponse(targetFormat, sourceFormat, chunk, state) {
       const finalResults = [];
       for (const r of results) {
         const converted = fromOpenAI(r, state);
+        if (converted) {
+          finalResults.push(...(Array.isArray(converted) ? converted : [converted]));
+        }
+      }
+      if (needsResponsesFlush) {
+        const converted = fromOpenAI(null, state);
         if (converted) {
           finalResults.push(...(Array.isArray(converted) ? converted : [converted]));
         }
