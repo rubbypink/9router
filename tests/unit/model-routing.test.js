@@ -10,12 +10,15 @@ async function setupDb() {
   process.env.DATA_DIR = tempDir;
   vi.resetModules();
 
-  const { createProviderNode } = await import("@/models/index.js");
-  const { getModelInfo } = await import("@/sse/services/model.js");
+  const { createCombo, createProviderNode } = await import("@/models/index.js");
+  const { getComboModels, getModelInfo, resolveComboName } = await import("@/sse/services/model.js");
 
   return {
+    createCombo,
     createProviderNode,
+    getComboModels,
     getModelInfo,
+    resolveComboName,
     cleanup() {
       fs.rmSync(tempDir, { recursive: true, force: true });
     },
@@ -76,5 +79,20 @@ describe("model routing", () => {
         provider: "openai-compatible-chat-test",
         model: "gpt-image-1",
       });
+  });
+
+  it("routes bare kimi-k2.6-code through the existing kimi-k2.6-cb combo", async () => {
+    const ctx = await setupDb();
+    cleanup = ctx.cleanup;
+    const models = ["kimi/kimi-k2.6", "opencode-go/kimi-k2.6"];
+    await ctx.createCombo({ name: "kimi-k2.6-cb", models });
+
+    await expect(ctx.getComboModels("kimi-k2.6-code")).resolves.toEqual(models);
+    expect(ctx.resolveComboName("kimi-k2.6-code")).toBe("kimi-k2.6-cb");
+    await expect(ctx.getModelInfo("kimi-k2.6-code")).resolves.toEqual({
+      provider: null,
+      model: "kimi-k2.6-cb",
+    });
+    await expect(ctx.getComboModels("kimi-k2.6-code/not-a-model")).resolves.toBeNull();
   });
 });

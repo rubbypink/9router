@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   connections: [],
@@ -73,7 +73,188 @@ beforeEach(() => {
   state.resolveProviderId.mockImplementation((provider) => provider);
 });
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe("account health state", () => {
+  it("keeps a Cloudflare daily allocation account unavailable until the next UTC midnight after stale state is reconciled", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-23T10:00:00.000Z"));
+    const expiredAt = "2026-07-23T09:59:59.000Z";
+    const account = connection({
+      provider: "cloudflare-ai",
+      "modelLock___all": expiredAt,
+      testStatus: "unavailable",
+      lastError: "You have used up your daily free allocation of 10,000 neurons",
+      lastErrorAt: expiredAt,
+      accountHealth: {
+        version: 2,
+        updatedAt: expiredAt,
+        models: {
+          __all: {
+            state: "unavailable",
+            reason: "quota",
+            failureClass: "quota",
+            retryAt: expiredAt,
+          },
+        },
+        recentErrors: [],
+      },
+    });
+    state.connections.push(account);
+    const { clearAccountError, reconcileAccountHealth } = await import("../../src/sse/services/auth.js");
+
+    await expect(reconcileAccountHealth()).resolves.toEqual({ checked: 1, reconciled: 1 });
+
+    const nextUtcMidnight = Date.UTC(2026, 6, 24);
+
+    expect(account["modelLock___all"]).toBe(new Date(nextUtcMidnight).toISOString());
+    expect(account.accountHealth.models.__all).toMatchObject({
+      state: "unavailable",
+      retryAt: new Date(nextUtcMidnight).toISOString(),
+      source: "scheduled-reset",
+    });
+    await clearAccountError(account.id, account, "@cf/meta/llama-3.1-8b-instruct");
+    expect(account).toMatchObject({
+      testStatus: "active",
+      lastError: null,
+      accountHealth: { models: {} },
+    });
+    expect(account.accountHealth.models).toEqual({});
+  });
+
+  it("lets an explicit success clear legacy Cloudflare daily-allocation state", async () => {
+    const expiredAt = new Date(Date.now() - 1_000).toISOString();
+    const account = connection({
+      provider: "cloudflare-ai",
+      "modelLock___all": expiredAt,
+      testStatus: "unavailable",
+      lastError: "You have used up your daily free allocation of 10,000 neurons",
+      lastErrorAt: expiredAt,
+      accountHealth: {
+        version: 2,
+        models: {
+          __all: { state: "unavailable", reason: "quota", retryAt: expiredAt },
+        },
+        recentErrors: [],
+      },
+    });
+    state.connections.push(account);
+    const { clearAccountError } = await import("../../src/sse/services/auth.js");
+
+    await clearAccountError(account.id, account, "@cf/meta/llama-3.1-8b-instruct");
+
+    expect(account).toMatchObject({
+      testStatus: "active",
+      lastError: null,
+      accountHealth: { models: {} },
+    });
+    expect(account.accountHealth.models).toEqual({});
+  });
+
+  it("keeps permanent credential and account-tier failures bypassed after reconciliation", async () => {
+    const account = connection({ provider: "nvidia" });
+    state.connections.push(account);
+    const { clearAccountError, markAccountUnavailable, reconcileAccountHealth } = await import("../../src/sse/services/auth.js");
+
+    const result = await markAccountUnavailable(
+      account.id,
+      403,
+      "Insufficient balance for this account tier",
+      "nvidia",
+      "z-ai/glm-5.2",
+    );
+
+    expect(result).toMatchObject({ shouldFallback: true, cooldownMs: 0 });
+    expect(account["modelLock___all"]).toBeNull();
+    expect(account.accountHealth.models.__all).toMatchObject({
+      state: "unavailable",
+      reason: "credentials",
+      retryAt: null,
+      source: "account-policy",
+    });
+    await expect(reconcileAccountHealth()).resolves.toEqual({ checked: 1, reconciled: 0 });
+    expect(account.accountHealth.models.__all.state).toBe("unavailable");
+    await clearAccountError(account.id, account, "z-ai/glm-5.2");
+    expect(account).toMatchObject({ testStatus: "active", accountHealth: { models: {} } });
+  });
+
+  it("keeps a generic credential failure on a finite account cooldown", async () => {
+    const account = connection({ provider: "nvidia" });
+    state.connections.push(account);
+    const { markAccountUnavailable } = await import("../../src/sse/services/auth.js");
+
+    const result = await markAccountUnavailable(
+      account.id,
+      401,
+      "Unauthorized",
+      "nvidia",
+      "z-ai/glm-5.2",
+    );
+
+    expect(result.cooldownMs).toBeGreaterThan(0);
+    expect(new Date(account["modelLock___all"]).getTime()).toBeGreaterThan(Date.now());
+    expect(account.accountHealth.models.__all).toMatchObject({
+      reason: "credentials",
+      retryAt: expect.any(String),
+    });
+  });
+
+  it("escalates NVIDIA function timeout cooldowns after the same-target retry is exhausted and resets on success", async () => {
+    const account = connection({ provider: "nvidia" });
+    state.connections.push(account);
+    const { clearAccountError, markAccountUnavailable, reconcileAccountHealth } = await import("../../src/sse/services/auth.js");
+    const error = "FUNCTION_INVOCATION_TIMEOUT";
+
+    await expect(markAccountUnavailable(
+      account.id,
+      504,
+      error,
+      "nvidia",
+      "z-ai/glm-5.2",
+    )).resolves.toMatchObject({ shouldFallback: false, retrySameTarget: true });
+
+    const first = await markAccountUnavailable(
+      account.id,
+      504,
+      error,
+      "nvidia",
+      "z-ai/glm-5.2",
+      null,
+      { sameTargetRetryExhausted: true },
+    );
+
+    expect(first).toMatchObject({ shouldFallback: true, cooldownMs: 5_000 });
+    expect(account.backoffLevel).toBe(1);
+    expect(new Date(account["modelLock_z-ai/glm-5.2"]).getTime()).toBeGreaterThan(Date.now());
+    expect(account.accountHealth.models["z-ai/glm-5.2"]).toMatchObject({
+      state: "unavailable",
+      reason: "transient",
+    });
+
+    const expiredAt = new Date(Date.now() - 1_000).toISOString();
+    account["modelLock_z-ai/glm-5.2"] = expiredAt;
+    account.accountHealth.models["z-ai/glm-5.2"].retryAt = expiredAt;
+    await expect(reconcileAccountHealth()).resolves.toEqual({ checked: 1, reconciled: 1 });
+    expect(account.backoffLevel).toBe(1);
+
+    const second = await markAccountUnavailable(
+      account.id,
+      504,
+      error,
+      "nvidia",
+      "z-ai/glm-5.2",
+      null,
+      { sameTargetRetryExhausted: true },
+    );
+
+    expect(second).toMatchObject({ shouldFallback: true, cooldownMs: 10_000 });
+    expect(account.backoffLevel).toBe(2);
+    await clearAccountError(account.id, account, "z-ai/glm-5.2");
+    expect(account).toMatchObject({ backoffLevel: 0, accountHealth: { models: {} } });
+  });
+
   it("keeps an exact provider quota reset instead of truncating it to a local cap", async () => {
     const account = connection({ backoffLevel: 4 });
     state.connections.push(account);
@@ -181,7 +362,7 @@ describe("account health state", () => {
     });
   });
 
-  it("re-enables only the automatic health state after a persisted lock expires", async () => {
+  it("preserves automatic backoff escalation after a persisted quota lock expires until a request succeeds", async () => {
     const expiredAt = new Date(Date.now() - 1000).toISOString();
     const account = connection({
       "modelLock_gpt-5.6": expiredAt,
@@ -203,7 +384,7 @@ describe("account health state", () => {
       },
     });
     state.connections.push(account);
-    const { reconcileAccountHealth } = await import("../../src/sse/services/auth.js");
+    const { clearAccountError, reconcileAccountHealth } = await import("../../src/sse/services/auth.js");
 
     await expect(reconcileAccountHealth()).resolves.toEqual({ checked: 1, reconciled: 1 });
     expect(account.isActive).toBe(true);
@@ -213,12 +394,14 @@ describe("account health state", () => {
       lastError: null,
       lastErrorAt: null,
       errorCode: null,
-      backoffLevel: 0,
+      backoffLevel: 3,
       accountHealth: {
         models: {},
         recentErrors: [{ model: "gpt-5.6", status: 429 }],
       },
     });
+    await clearAccountError(account.id, account, "gpt-5.6");
+    expect(account.backoffLevel).toBe(0);
   });
 
   it("uses a provider-specific fallback cooldown when no reset hint is returned", async () => {

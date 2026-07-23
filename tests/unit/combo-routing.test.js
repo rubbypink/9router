@@ -282,7 +282,7 @@ describe("combo round-robin routing", () => {
     expect(calls).toEqual(["provider/model-b", "provider/model-a"]);
   });
 
-  it("stops combo fallback when the logical request reaches its upstream dispatch budget", async () => {
+  it("continues to the next combo model when the prior model exhausts its dispatch budget", async () => {
     const calls = [];
     const response = await handleComboChat({
       body: { messages: [{ role: "user", content: "hello" }] },
@@ -292,7 +292,7 @@ describe("combo round-robin routing", () => {
         if (model === "provider/model-a") {
           return new Response(JSON.stringify({
             error: {
-              message: "Upstream attempt budget exhausted (4/4)",
+              message: "Upstream attempt budget exhausted (16/16)",
               code: "upstream_attempt_budget_exhausted",
             },
           }), { status: 503, headers: { "content-type": "application/json" } });
@@ -304,8 +304,9 @@ describe("combo round-robin routing", () => {
       comboStrategy: "fallback",
     });
 
-    expect(response.status).toBe(503);
-    expect(calls).toEqual(["provider/model-a"]);
+    expect(response.ok).toBe(true);
+    await expect(response.text()).resolves.toBe("configured fallback");
+    expect(calls).toEqual(["provider/model-a", "provider/model-b"]);
   });
 
   it("does not switch a signed Gemini tool continuation to another combo model", async () => {

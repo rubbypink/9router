@@ -1,5 +1,5 @@
 export const REQUEST_EXECUTION_POLICY = Object.freeze({
-  maxAttempts: 4,
+  maxAttempts: 16,
   minEndpointIntervalMs: 2000,
 });
 
@@ -152,6 +152,10 @@ export const QUOTA_POLICY_PROFILES = Object.freeze({
       { header: "ratelimit", format: "structured-delay" },
     ],
     bodyHints: ["common-reset-fields"],
+    scheduledReset: Object.freeze({
+      errorPattern: /\bdaily(?:[- ]free)?[- ]allocation\b/i,
+      schedule: "next-utc-midnight",
+    }),
     sources: ["https://developers.cloudflare.com/fundamentals/api/reference/limits/"],
   }),
   cerebras: Object.freeze({

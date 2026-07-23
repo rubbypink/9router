@@ -66,8 +66,8 @@ async function runChatPassthrough(input) {
     ),
   );
 
-  await new Response(output).text();
-  return completedSuccessfully;
+  const text = await new Response(output).text();
+  return { text, completedSuccessfully };
 }
 
 describe("OpenAI Responses streaming termination", () => {
@@ -147,11 +147,23 @@ describe("OpenAI Responses streaming termination", () => {
 
 describe("OpenAI-compatible Chat Completions termination", () => {
   it("treats clean provider EOF as completion without requiring finish_reason", async () => {
-    const completedSuccessfully = await runChatPassthrough([
+    const { completedSuccessfully } = await runChatPassthrough([
       `data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: "checking" }, finish_reason: null }] })}`,
       "",
     ].join("\n"));
 
+    expect(completedSuccessfully).toBe(true);
+  });
+
+  it("does not duplicate an upstream DONE sentinel during passthrough flush", async () => {
+    const { text: output, completedSuccessfully } = await runChatPassthrough([
+      `data: ${JSON.stringify({ choices: [{ delta: { content: "OK" }, finish_reason: null }] })}`,
+      "",
+      "data: [DONE]",
+      "",
+    ].join("\n"));
+
+    expect(output.match(/data: \[DONE\]/g)).toHaveLength(1);
     expect(completedSuccessfully).toBe(true);
   });
 });

@@ -43,4 +43,13 @@ describe("getCapabilitiesForModel", () => {
     expect(getCapabilitiesForModel("kiro", "gpt-5.6-luna-agentic")).toMatchObject(kiroGpt56Expected);
     expect(getCapabilitiesForModel("kiro", "gpt-5.6-sol-thinking-agentic")).toMatchObject(kiroGpt56Expected);
   });
+
+  it("preserves GLM-5 limits when a compatible provider overrides its thinking format", () => {
+    expect(getCapabilitiesForModel("openai-compatible-custom", "glm-5.2:dev")).toMatchObject({
+      contextWindow: 200000,
+      maxOutput: 128000,
+      reasoning: true,
+      thinkingFormat: "claude-budget",
+    });
+  });
 });

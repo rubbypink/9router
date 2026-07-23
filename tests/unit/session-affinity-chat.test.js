@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   markAccountUnavailable: vi.fn(),
   markSuccess: vi.fn(),
   resolveThreadIdentity: vi.fn(),
+  resolveComboName: vi.fn((model) => model),
   run: vi.fn(),
   runWithUpstreamRequestState: vi.fn(),
 }));
@@ -41,6 +42,7 @@ vi.mock("@/lib/localDb", () => ({ getSettings: mocks.getSettings }));
 vi.mock("../../src/sse/services/model.js", () => ({
   getModelInfo: mocks.getModelInfo,
   getComboModels: mocks.getComboModels,
+  resolveComboName: mocks.resolveComboName,
   resolveProviderAlias: (provider) => provider,
 }));
 vi.mock("open-sse/handlers/chatCore.js", () => ({ handleChatCore: mocks.handleChatCore }));
@@ -84,6 +86,7 @@ vi.mock("open-sse/services/threadRouteCoordinator.js", () => ({
 }));
 vi.mock("open-sse/services/requestExecutionState.js", () => ({
   createUpstreamRequestState: mocks.createUpstreamRequestState,
+  runWithUpstreamAttemptScope: (_scope, operation) => operation(),
   runWithUpstreamRequestState: mocks.runWithUpstreamRequestState,
   UPSTREAM_DISPATCH_INELIGIBLE_ERROR_CODE: "upstream_dispatch_ineligible",
   UPSTREAM_ATTEMPT_BUDGET_ERROR_CODE: "upstream_attempt_budget_exhausted",
@@ -109,6 +112,7 @@ describe("session affinity chat fallback", () => {
     mocks.handleBypassRequest.mockReturnValue(null);
     mocks.isCodexThreadAffinityEnabled.mockReturnValue(true);
     mocks.resolveThreadIdentity.mockReturnValue({ sessionKey: "session-affinity-chat", legacySessionKey: null });
+    mocks.resolveComboName.mockImplementation((model) => model);
     mocks.getConnectionBinding.mockReturnValue({ connectionId: boundConnection, routeEpoch: 7 });
     mocks.getProviderCredentials
       .mockResolvedValueOnce({
@@ -269,6 +273,44 @@ describe("session affinity chat fallback", () => {
     expect(response.status).toBe(200);
     await expect(response.text()).resolves.toBe("fusion ok");
     expect(mocks.handleFusionChat).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the canonical combo identity for alias strategy, affinity, and fusion settings", async () => {
+    mocks.resolveComboName.mockImplementation((model) => (
+      model === "kimi-k2.6-code" ? "kimi-k2.6-cb" : model
+    ));
+    mocks.getSettings.mockResolvedValue({
+      requireApiKey: false,
+      comboStrategies: {
+        "kimi-k2.6-cb": {
+          fallbackStrategy: "fusion",
+          judgeModel: "openai/judge",
+          fusionTuning: { minPanel: 1 },
+        },
+      },
+    });
+    mocks.getComboModels.mockResolvedValue(["openai/gpt-test", "anthropic/claude-test"]);
+    mocks.handleFusionChat.mockResolvedValue(new Response("canonical fusion ok"));
+    const request = new Request("http://router.test/v1/responses", {
+      method: "POST",
+      headers: { "content-type": "application/json", "thread-id": "thread-alias-fusion" },
+      body: JSON.stringify({ model: "kimi-k2.6-code", input: "hello" }),
+    });
+
+    const response = await handleChat(request);
+
+    expect(response.status).toBe(200);
+    await expect(response.text()).resolves.toBe("canonical fusion ok");
+    expect(mocks.run).toHaveBeenCalledWith(
+      expect.any(Object),
+      "kimi-k2.6-cb",
+      expect.any(Function),
+    );
+    expect(mocks.handleFusionChat).toHaveBeenCalledWith(expect.objectContaining({
+      comboName: "kimi-k2.6-cb",
+      judgeModel: "openai/judge",
+      tuning: { minPanel: 1 },
+    }));
   });
 
   it("continues a fallback combo when every account for its first model is exhausted", async () => {

@@ -33,6 +33,7 @@ describe("provider quota policy", () => {
     expect(resolveQuotaPolicy("anthropic-compatible-team").id).toBe("anthropic-compatible");
     expect(resolveQuotaPolicy("custom-embedding-team").id).toBe("openai-compatible");
     expect(REQUEST_EXECUTION_POLICY).toEqual({
+      maxAttempts: 16,
       minEndpointIntervalMs: 2_000,
     });
   });

@@ -11,7 +11,7 @@ import {
 } from "../services/auth.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
 import { getSettings } from "@/lib/localDb";
-import { getModelInfo, getComboModels } from "../services/model.js";
+import { getModelInfo, getComboModels, resolveComboName } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
@@ -127,6 +127,7 @@ export async function handleChat(request, clientRawRequest = null) {
   cacheClaudeHeaders(clientRawRequest.headers);
 
   const modelStr = body.model;
+  const routeModelStr = resolveComboName(modelStr);
 
   // Request summary is emitted as the unified "▶" line in chatCore (has fmt/thinking/account)
 
@@ -165,14 +166,14 @@ export async function handleChat(request, clientRawRequest = null) {
   if (bypassResponse) return bypassResponse.response || bypassResponse;
 
   const dispatch = async (routeContext = null) => {
-    const comboModels = await getComboModels(modelStr);
+    const comboModels = await getComboModels(routeModelStr);
     if (comboModels) {
       const comboStrategies = settings.comboStrategies || {};
-      const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
+      const comboSpecificStrategy = comboStrategies[routeModelStr]?.fallbackStrategy;
       const comboStrategy = comboSpecificStrategy || settings.comboStrategy || "fallback";
 
       if (comboStrategy === "fusion") {
-        log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: fusion)`);
+        log.info("CHAT", `Combo "${routeModelStr}" with ${comboModels.length} models (strategy: fusion)`);
         return handleFusionChat({
           body,
           models: comboModels,
@@ -185,21 +186,21 @@ export async function handleChat(request, clientRawRequest = null) {
             return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, null);
           },
           log,
-          comboName: modelStr,
-          judgeModel: comboStrategies[modelStr]?.judgeModel,
-          tuning: comboStrategies[modelStr]?.fusionTuning,
+          comboName: routeModelStr,
+          judgeModel: comboStrategies[routeModelStr]?.judgeModel,
+          tuning: comboStrategies[routeModelStr]?.fusionTuning,
         });
       }
 
       prepareAffinityComboRoute(routeContext, comboModels);
       const comboStickyLimit = settings.comboStickyRoundRobinLimit;
-      log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
+      log.info("CHAT", `Combo "${routeModelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
       return handleComboChat({
         body,
         models: comboModels,
         handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, routeContext),
         log,
-        comboName: modelStr,
+        comboName: routeModelStr,
         comboStrategy,
         comboStickyLimit,
         preferredModel: routeContext?.binding?.model || null,
@@ -218,11 +219,11 @@ export async function handleChat(request, clientRawRequest = null) {
     try {
       const identity = resolveThreadIdentity({ headers: request.headers, body });
       if (!identity) return dispatch();
-      return await threadRouteCoordinator.run(identity, modelStr, (binding) => dispatch({
+      return await threadRouteCoordinator.run(identity, routeModelStr, (binding) => dispatch({
         coordinator: threadRouteCoordinator,
         sessionKey: identity.sessionKey,
         legacySessionKey: identity.legacySessionKey,
-        requestedModel: modelStr,
+        requestedModel: routeModelStr,
         binding,
         allowRebind: false,
         rebindReason: null,
@@ -247,16 +248,17 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
   // If provider is null, this might be a combo name - check and handle
   if (!modelInfo.provider) {
-    const comboModels = await getComboModels(modelStr);
+    const comboName = resolveComboName(modelStr);
+    const comboModels = await getComboModels(comboName);
     if (comboModels) {
       const chatSettings = await getSettings();
       // Check for combo-specific strategy first, fallback to global
       const comboStrategies = chatSettings.comboStrategies || {};
-      const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
+      const comboSpecificStrategy = comboStrategies[comboName]?.fallbackStrategy;
       const comboStrategy = comboSpecificStrategy || chatSettings.comboStrategy || "fallback";
 
       if (comboStrategy === "fusion") {
-        log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: fusion)`);
+        log.info("CHAT", `Combo "${comboName}" with ${comboModels.length} models (strategy: fusion)`);
         return handleFusionChat({
           body,
           models: comboModels,
@@ -269,21 +271,21 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
             return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, null);
           },
           log,
-          comboName: modelStr,
-          judgeModel: comboStrategies[modelStr]?.judgeModel,
-          tuning: comboStrategies[modelStr]?.fusionTuning,
+          comboName,
+          judgeModel: comboStrategies[comboName]?.judgeModel,
+          tuning: comboStrategies[comboName]?.fusionTuning,
         });
       }
 
       prepareAffinityComboRoute(routeContext, comboModels);
       const comboStickyLimit = chatSettings.comboStickyRoundRobinLimit;
-      log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
+      log.info("CHAT", `Combo "${comboName}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
       return handleComboChat({
         body,
         models: comboModels,
         handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, routeContext),
         log,
-        comboName: modelStr,
+        comboName,
         comboStrategy,
         comboStickyLimit,
         preferredModel: routeContext?.binding?.model || null,

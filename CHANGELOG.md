@@ -1,3 +1,21 @@
+# v0.5.40-9trip.8 (2026-07-23)
+
+## Fixes
+- **Fallback**: give each combo model a bounded 16-attempt provider budget and continue to the next model after account or attempt exhaustion
+- **Quota**: bypass persisted daily-allocation and permanent account-policy failures until reset or explicit recovery
+- **NVIDIA**: retry deployment timeouts once, then apply an escalating endpoint cooldown
+- **Models**: route `kimi-k2.6-code` through its canonical combo and preserve custom GLM limits while emitting numeric thinking budgets
+
+# v0.5.40-9trip.7 (2026-07-23)
+
+## Fixes
+- **Gemini tools**: strip unsupported `encrypted` JSON Schema annotations without removing valid tool properties named `encrypted`
+
+# v0.5.40-9trip.6 (2026-07-23)
+
+## Fixes
+- **Streaming**: preserve a single OpenAI-compatible `[DONE]` sentinel when an upstream passthrough stream already supplied it
+
 # v0.5.40-9trip.5 (2026-07-23)
 
 ## Fixes

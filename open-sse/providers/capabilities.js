@@ -172,6 +172,14 @@ export const PROVIDER_CAPABILITIES = {
   },
 };
 
+const DYNAMIC_PROVIDER_CAPABILITIES = [
+  {
+    providerPattern: "openai-compatible-*",
+    model: "glm-5.2:dev",
+    caps: { reasoning: true, thinkingFormat: "claude-budget" },
+  },
+];
+
 /**
  * Pattern fallback — glob (* = wildcard), matched case-insensitively and
  * anchored (^...$) so a pattern must match the full model id. ORDER MATTERS:
@@ -299,6 +307,18 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*ling-*",         caps: { reasoning: true, contextWindow: 128000 } },
 ];
 
+function getGenericCapabilities(model, baseModel) {
+  if (MODEL_CAPABILITIES[baseModel]) return { ...DEFAULT_CAPABILITIES, ...MODEL_CAPABILITIES[baseModel] };
+  if (MODEL_CAPABILITIES[model]) return { ...DEFAULT_CAPABILITIES, ...MODEL_CAPABILITIES[model] };
+
+  for (const { pattern, caps } of PATTERN_CAPABILITIES) {
+    if (matchPattern(pattern, baseModel) || matchPattern(pattern, model)) {
+      return { ...DEFAULT_CAPABILITIES, ...caps };
+    }
+  }
+  return { ...DEFAULT_CAPABILITIES };
+}
+
 /**
  * Resolve capabilities for a model using the 4-step fallback chain,
  * merged over DEFAULT_CAPABILITIES so the result is always complete.
@@ -315,22 +335,14 @@ export function getCapabilitiesForModel(provider, model) {
 
   // 1. Provider-specific override
   if (provider) {
+    const dynamic = DYNAMIC_PROVIDER_CAPABILITIES.find((entry) => (
+      entry.model === model && matchPattern(entry.providerPattern, provider)
+    ));
+    if (dynamic) return { ...getGenericCapabilities(model, baseModel), ...dynamic.caps };
     const providerCaps = PROVIDER_CAPABILITIES[provider];
     if (providerCaps?.[model]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[model] };
     if (providerCaps?.[baseModel]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[baseModel] };
   }
 
-  // 2. Canonical exact
-  if (MODEL_CAPABILITIES[baseModel]) return { ...DEFAULT_CAPABILITIES, ...MODEL_CAPABILITIES[baseModel] };
-  if (MODEL_CAPABILITIES[model]) return { ...DEFAULT_CAPABILITIES, ...MODEL_CAPABILITIES[model] };
-
-  // 3. Pattern match (first match wins)
-  for (const { pattern, caps } of PATTERN_CAPABILITIES) {
-    if (matchPattern(pattern, baseModel) || matchPattern(pattern, model)) {
-      return { ...DEFAULT_CAPABILITIES, ...caps };
-    }
-  }
-
-  // 4. Floor
-  return { ...DEFAULT_CAPABILITIES };
+  return getGenericCapabilities(model, baseModel);
 }

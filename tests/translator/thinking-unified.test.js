@@ -108,6 +108,16 @@ describe("applyThinking per provider format", () => {
     expect(out.enable_thinking).toBe(false);
     expect(out.thinking).toBeUndefined();
   });
+  it("custom OpenAI-compatible GLM dev metadata uses a numeric thinking budget without changing ZAI GLM", () => {
+    const custom = apply("openai", "glm-5.2:dev", { reasoning_effort: "high" }, "openai-compatible-custom");
+    const zai = apply("openai", "glm-5.2", { reasoning_effort: "high" }, "glm");
+
+    expect(custom.thinking).toEqual({ type: "enabled", budget_tokens: 24576 });
+    expect(typeof custom.thinking.budget_tokens).toBe("number");
+    expect(custom.enable_thinking).toBeUndefined();
+    expect(zai.thinking).toEqual({ type: "enabled" });
+    expect(zai.thinking.budget_tokens).toBeUndefined();
+  });
   it("Qwen on → enable_thinking + thinking_budget", () => {
     const out = apply("openai", "qwen3-max", { reasoning_effort: "medium" }, "qwen");
     expect(out.enable_thinking).toBe(true);

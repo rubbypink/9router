@@ -109,6 +109,47 @@ describe("Antigravity executor", () => {
     expect(query).toEqual({ type: "string", description: "Search query" });
   });
 
+  it("strips encrypted from nested Gemini tool schemas", () => {
+    const out = openaiToAntigravityRequest("gemini-3.5-flash-low", {
+      messages: [{ role: "user", content: "Create a task" }],
+      tools: [{
+        type: "function",
+        function: {
+          name: "task_create",
+          parameters: {
+            type: "object",
+            properties: {
+              encrypted: {
+                type: "boolean",
+                description: "Whether encryption is enabled",
+              },
+              credentials: {
+                type: "object",
+                properties: {
+                  token: {
+                    type: "string",
+                    description: "Access token",
+                    encrypted: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      }],
+    }, true, { projectId: "project-1", connectionId: "conn-1" });
+
+    const parameters = out.request.tools[0].functionDeclarations[0].parameters;
+    expect(parameters.properties.encrypted).toEqual({
+      type: "boolean",
+      description: "Whether encryption is enabled",
+    });
+    expect(parameters.properties.credentials.properties.token).toEqual({
+      type: "string",
+      description: "Access token",
+    });
+  });
+
   it("does not inject the legacy Antigravity default system prompt for Gemini-backed models", () => {
     const out = openaiToAntigravityRequest("gemini-3.5-flash-low", {
       messages: [

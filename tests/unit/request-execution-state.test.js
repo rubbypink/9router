@@ -5,6 +5,7 @@ import {
   createUpstreamRequestState,
   resetUpstreamExecutionStateForTests,
   runAsUpstreamDispatch,
+  runWithUpstreamAttemptScope,
   runWithUpstreamRequestState,
 } from "../../open-sse/services/requestExecutionState.js";
 
@@ -35,11 +36,11 @@ describe("upstream request execution state", () => {
     expect(state.attempts).toBe(2);
   });
 
-  it("rejects a fifth provider dispatch before opening its endpoint", async () => {
+  it("rejects a seventeenth provider dispatch before opening its endpoint", async () => {
     const state = createUpstreamRequestState({ minEndpointIntervalMs: 0 });
 
     await runWithUpstreamRequestState(state, async () => {
-      for (let attempt = 0; attempt < 4; attempt++) {
+      for (let attempt = 0; attempt < 16; attempt++) {
         await runAsUpstreamDispatch("openai", () => beforeUpstreamRequest(providerEndpoint), [providerEndpoint]);
       }
 
@@ -48,7 +49,51 @@ describe("upstream request execution state", () => {
       ).rejects.toMatchObject({ code: "upstream_attempt_budget_exhausted" });
     });
 
-    expect(state.attempts).toBe(4);
+    expect(state.attempts).toBe(16);
+  });
+
+  it("gives a fallback combo candidate its own bounded dispatch budget", async () => {
+    const state = createUpstreamRequestState({ minEndpointIntervalMs: 0 });
+
+    await runWithUpstreamRequestState(state, async () => {
+      await runWithUpstreamAttemptScope("provider-a/model-a", async () => {
+        for (let attempt = 0; attempt < 16; attempt++) {
+          await runAsUpstreamDispatch("provider-a", () => beforeUpstreamRequest(providerEndpoint), [providerEndpoint]);
+        }
+      });
+      await expect(runWithUpstreamAttemptScope(
+        "provider-a/model-a",
+        () => runAsUpstreamDispatch("provider-a", () => beforeUpstreamRequest(providerEndpoint), [providerEndpoint]),
+      )).rejects.toMatchObject({ code: "upstream_attempt_budget_exhausted" });
+      await expect(runWithUpstreamAttemptScope(
+        "provider-b/model-b",
+        () => runAsUpstreamDispatch("provider-b", () => beforeUpstreamRequest(providerEndpoint), [providerEndpoint]),
+      )).resolves.toBeUndefined();
+    });
+
+    expect(state.attemptsByScope).toEqual({
+      "provider-a/model-a": 16,
+      "provider-b/model-b": 1,
+    });
+  });
+
+  it("tracks a __proto__ attempt scope without prototype mutation", async () => {
+    const state = createUpstreamRequestState({ minEndpointIntervalMs: 0 });
+
+    await runWithUpstreamRequestState(state, async () => {
+      await runWithUpstreamAttemptScope("__proto__", async () => {
+        for (let attempt = 0; attempt < 16; attempt++) {
+          await runAsUpstreamDispatch("openai", () => beforeUpstreamRequest(providerEndpoint), [providerEndpoint]);
+        }
+      });
+      await expect(runWithUpstreamAttemptScope(
+        "__proto__",
+        () => runAsUpstreamDispatch("openai", () => beforeUpstreamRequest(providerEndpoint), [providerEndpoint]),
+      )).rejects.toMatchObject({ code: "upstream_attempt_budget_exhausted" });
+    });
+
+    expect(Object.getPrototypeOf(state.attemptsByScope)).toBeNull();
+    expect(state.attemptsByScope.__proto__).toBe(16);
   });
 
   it("does not charge provider attempt budget for a media prefetch origin", async () => {

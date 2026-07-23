@@ -2,7 +2,7 @@ import { getProviderConnections, validateApiKey, updateProviderConnection, getSe
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil, getModelLockKey } from "open-sse/services/accountFallback.js";
 import { ACCOUNT_HEALTH_CONFIG } from "open-sse/config/errorConfig.js";
-import { resolveQuotaPolicy } from "open-sse/config/quotaPolicy.js";
+import { QUOTA_FALLBACK_POLICY, resolveQuotaPolicy } from "open-sse/config/quotaPolicy.js";
 import { classifyUpstreamFailure, FAILURE_CLASS, isAvailabilityFailure } from "open-sse/services/upstreamFailurePolicy.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import * as log from "../utils/logger.js";
@@ -53,6 +53,57 @@ function accountHealthReason(status, errorText, disposition = null) {
   if ([401, 402, 403].includes(status)) return "credentials";
   if (status >= 500 || /timeout|overload|temporarily unavailable/.test(text)) return "transient";
   return "provider";
+}
+
+function scheduledQuotaResetAtMs(quotaPolicy, errorText, now) {
+  const reset = quotaPolicy?.scheduledReset;
+  if (!reset?.errorPattern?.test(String(errorText || ""))) return null;
+  if (reset.schedule !== "next-utc-midnight") return null;
+  const date = new Date(now);
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1);
+}
+
+function scheduledQuotaRecoveryUpdate(connection, now) {
+  const observedAt = new Date(connection?.lastErrorAt).getTime();
+  if (!Number.isFinite(observedAt) || observedAt > now) return null;
+
+  const quotaPolicy = resolveQuotaPolicy(connection.provider);
+  const resetAtMs = scheduledQuotaResetAtMs(
+    quotaPolicy,
+    connection.lastError,
+    observedAt,
+  );
+  if (!Number.isFinite(resetAtMs) || resetAtMs <= now) return null;
+
+  const retryAt = new Date(resetAtMs).toISOString();
+  const lockKey = getModelLockKey(null);
+  const current = currentAccountHealth(connection);
+  const existing = current?.models?.[ACCOUNT_HEALTH_ALL_MODELS];
+  if (connection[lockKey] === retryAt && existing?.retryAt === retryAt && existing?.source === "scheduled-reset") {
+    return null;
+  }
+
+  const disposition = classifyUpstreamFailure({
+    provider: connection.provider,
+    status: 429,
+    error: connection.lastError,
+    now,
+  });
+  return {
+    [lockKey]: retryAt,
+    testStatus: "unavailable",
+    accountHealth: recordAccountHealth(connection, {
+      model: null,
+      status: 429,
+      errorCode: connection.errorCode || "429",
+      reason: String(connection.lastError),
+      retryAt,
+      source: "scheduled-reset",
+      quotaPolicy: quotaPolicy.id,
+      disposition,
+      now,
+    }),
+  };
 }
 
 function currentAccountHealth(connection) {
@@ -241,11 +292,14 @@ function recordAccountHealth(connection, { model, status, errorCode, reason, ret
   };
 }
 
-function clearExpiredAccountHealth(connection, clearedLockKeys = [], now = Date.now()) {
+function clearExpiredAccountHealth(connection, clearedLockKeys = [], now = Date.now(), clearedHealthModels = []) {
   const current = currentAccountHealth(connection);
   if (!current) return { changed: false, value: null };
 
-  const clearedModels = new Set(clearedLockKeys.map(key => key.slice("modelLock_".length)));
+  const clearedModels = new Set([
+    ...clearedLockKeys.map(key => key.slice("modelLock_".length)),
+    ...clearedHealthModels,
+  ]);
   const models = {};
   let changed = current.health.version !== ACCOUNT_HEALTH_VERSION;
   for (const [model, value] of Object.entries(current.models)) {
@@ -271,25 +325,32 @@ function clearExpiredAccountHealth(connection, clearedLockKeys = [], now = Date.
   };
 }
 
-function accountRecoveryUpdate(connection, extraClearedLockKeys = [], now = Date.now()) {
+function accountRecoveryUpdate(connection, extraClearedLockKeys = [], now = Date.now(), clearedHealthModels = []) {
+  const scheduledResetUpdate = clearedHealthModels.length === 0
+    ? scheduledQuotaRecoveryUpdate(connection, now)
+    : null;
+  if (scheduledResetUpdate) return scheduledResetUpdate;
+
   const expired = expiredLockKeys(connection, now);
   const clearedLockKeys = [...new Set([...expired, ...extraClearedLockKeys])];
   const update = Object.fromEntries(clearedLockKeys.map(key => [key, null]));
-  const health = clearExpiredAccountHealth(connection, clearedLockKeys, now);
+  const health = clearExpiredAccountHealth(connection, clearedLockKeys, now, clearedHealthModels);
   if (health.changed) update.accountHealth = health.value;
 
   const hasActiveLocks = activeLockKeys(connection, now).some(key => !clearedLockKeys.includes(key));
   const hasActiveHealth = Object.keys(health.value?.models || {}).length > 0;
-  const recoveredAutomaticState = clearedLockKeys.length > 0 || health.changed;
-  if (recoveredAutomaticState && !hasActiveLocks && !hasActiveHealth) {
+  const successfulRecovery = clearedHealthModels.length > 0;
+  const recoveredState = clearedLockKeys.length > 0 || health.changed || successfulRecovery;
+  if (recoveredState && !hasActiveLocks && !hasActiveHealth) {
     if (connection.testStatus === "unavailable" || connection.lastError || connection.lastErrorAt || connection.errorCode || connection.backoffLevel) {
-      Object.assign(update, {
+      const recovery = {
         testStatus: "active",
         lastError: null,
         lastErrorAt: null,
         errorCode: null,
-        backoffLevel: 0,
-      });
+      };
+      if (successfulRecovery) recovery.backoffLevel = 0;
+      Object.assign(update, recovery);
     }
   }
   return update;
@@ -745,26 +806,49 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   const preciseReset = Number(disposition.retryAtMs || resetsAtMs);
   const hasProviderReset = Number.isFinite(preciseReset) && preciseReset > now;
   const quotaPolicy = resolveQuotaPolicy(provider) || {};
+  const scheduledReset = !hasProviderReset
+    && disposition.failureClass === FAILURE_CLASS.QUOTA
+    && status === 429
+    ? scheduledQuotaResetAtMs(quotaPolicy, errorText, now)
+    : null;
+  const retryAtMs = hasProviderReset ? preciseReset : scheduledReset;
+  const hasRetryAt = Number.isFinite(retryAtMs) && retryAtMs > now;
+  const durableAccountFailure = disposition.evidence === "account-policy";
+  const nvidiaCircuitBreak = disposition.evidence === "nvidia-function-invocation-timeout" && failure?.sameTargetRetryExhausted;
   const policyStatus = disposition.failureClass === FAILURE_CLASS.QUOTA
     ? 429
     : (disposition.failureClass === FAILURE_CLASS.NO_CREDENTIALS ? 401 : status);
   const fallback = checkFallbackError(policyStatus, errorText, conn.backoffLevel || 0);
-  const cooldownMs = hasProviderReset
-    ? preciseReset - now
-    : (disposition.cooldownMs || (disposition.failureClass === FAILURE_CLASS.QUOTA && quotaPolicy.fallbackCooldownMs) || fallback.cooldownMs || 5_000);
-  const newBackoffLevel = hasProviderReset || disposition.failureClass !== FAILURE_CLASS.QUOTA
-    ? 0
-    : (fallback.newBackoffLevel ?? 0);
+  let newBackoffLevel = conn.backoffLevel || 0;
+  if (nvidiaCircuitBreak) {
+    newBackoffLevel = Math.min(newBackoffLevel + 1, QUOTA_FALLBACK_POLICY.maxBackoffLevel);
+  } else if (!hasRetryAt && disposition.failureClass === FAILURE_CLASS.QUOTA) {
+    newBackoffLevel = fallback.newBackoffLevel ?? newBackoffLevel;
+  }
+
+  let cooldownMs = disposition.cooldownMs || (disposition.failureClass === FAILURE_CLASS.QUOTA && quotaPolicy.fallbackCooldownMs) || fallback.cooldownMs || 5_000;
+  if (durableAccountFailure) cooldownMs = 0;
+  else if (nvidiaCircuitBreak) {
+    cooldownMs = Math.min(
+      disposition.cooldownMs * Math.pow(2, newBackoffLevel - 1),
+      QUOTA_FALLBACK_POLICY.maxCooldownMs,
+    );
+  } else if (hasRetryAt) cooldownMs = retryAtMs - now;
   const scopedModel = disposition.scope === "account" || disposition.scope === "provider" ? null : model;
   const targets = disposition.scope === "provider" ? connections : [conn];
   const reason = String(disposition.safeMessage || errorText || "Provider error").slice(0, 100);
   const errorCode = failure?.errorCode ? String(failure.errorCode) : String(status);
+  let source = "fallback-policy";
+  if (hasProviderReset) source = "provider-reset";
+  else if (scheduledReset) source = "scheduled-reset";
+  else if (durableAccountFailure) source = "account-policy";
 
   for (const target of targets) {
     const lockKey = getModelLockKey(scopedModel);
-    const lockUpdate = hasProviderReset
-      ? { [lockKey]: new Date(preciseReset).toISOString() }
-      : buildModelLockUpdate(scopedModel, cooldownMs);
+    let lockUpdate;
+    if (durableAccountFailure) lockUpdate = { [lockKey]: null };
+    else if (hasRetryAt) lockUpdate = { [lockKey]: new Date(retryAtMs).toISOString() };
+    else lockUpdate = buildModelLockUpdate(scopedModel, cooldownMs);
     const retryAt = lockUpdate[lockKey];
     const accountHealth = recordAccountHealth(target, {
       model: scopedModel,
@@ -772,7 +856,7 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
       errorCode,
       reason,
       retryAt,
-      source: hasProviderReset ? "provider-reset" : "fallback-policy",
+      source,
       quotaPolicy: quotaPolicy.id || "generic",
       disposition,
       now,
@@ -818,7 +902,8 @@ export async function clearAccountError(connectionId, currentConnection, model =
     if (model && k === getModelLockKey(null)) return true;
     return conn[k] && new Date(conn[k]).getTime() <= now;
   });
-  const clearObj = accountRecoveryUpdate(conn, keysToClear, now);
+  const clearedHealthModels = model ? [model, ACCOUNT_HEALTH_ALL_MODELS] : [ACCOUNT_HEALTH_ALL_MODELS];
+  const clearObj = accountRecoveryUpdate(conn, keysToClear, now, clearedHealthModels);
   if (Object.keys(clearObj).length === 0) return;
   await updateProviderConnection(connectionId, clearObj);
 }
