@@ -14,17 +14,19 @@ const template = {
   display_name: "GPT-5.6 Terra",
   description: "source metadata",
   supported_reasoning_levels: [{ effort: "medium" }],
-  shell_type: "default",
+  shell_type: "shell_command",
   visibility: "list",
   supported_in_api: true,
   priority: 4,
   base_instructions: "preserved codex instructions",
   support_verbosity: true,
   default_verbosity: "medium",
-  apply_patch_tool_type: "function",
+  apply_patch_tool_type: "freeform",
   truncation_policy: { type: "tokens", value: 1000 },
   supports_parallel_tool_calls: true,
   experimental_supported_tools: [],
+  tool_mode: "code_mode_only",
+  use_responses_lite: true,
 };
 
 const combos = [
@@ -34,7 +36,7 @@ const combos = [
 ];
 
 describe("Codex model catalog", () => {
-  it("promotes current LLM dashboard combos while preserving Codex metadata", () => {
+  it("promotes LLM combos with chat-adapter-safe Codex tool metadata", () => {
     const catalog = buildCodexModelsCatalog({ combos, template });
 
     expect(catalog.models.map((model) => model.slug)).toEqual([
@@ -46,7 +48,12 @@ describe("Codex model catalog", () => {
     expect(catalog.models[0].supported_in_api).toBe(false);
     expect(catalog.models[1].base_instructions).toBe(template.base_instructions);
     expect(catalog.models[1].supported_reasoning_levels).toEqual(template.supported_reasoning_levels);
+    expect(catalog.models[1].shell_type).toBe("shell_command");
+    expect(catalog.models[1].tool_mode).toBe("direct");
+    expect(catalog.models[1].apply_patch_tool_type).toBeNull();
+    expect(catalog.models[1].use_responses_lite).toBe(true);
     expect(catalog.models[1].visibility).toBe("list");
+    expect(CODEX_MODEL_CATALOG_CONTRACT_VERSION).toBe("9router-codex-model-catalog/v2");
   });
 
   it("uses the retained catalog template before a regular upstream model", () => {
