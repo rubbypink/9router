@@ -1,3 +1,9 @@
+# v0.5.40-9trip.10 (2026-07-23)
+
+## Fixes
+- **Codex tools**: advertise dashboard combos in direct tool mode so explorer, librarian, and executor subagents receive filesystem, shell, MCP, and collaboration tools through chat-adapter routes
+- **Codex catalog**: disable unsupported freeform `apply_patch` metadata and bump the model-catalog contract to force capability refresh
+
 # v0.5.40-9trip.9 (2026-07-23)
 
 ## Fixes
