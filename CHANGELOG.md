@@ -1,3 +1,8 @@
+# v0.5.40-9trip.11 (2026-07-23)
+
+## Fixes
+- **Codex catalog refresh**: include the required `supports_reasoning_summaries` field on retained templates and dashboard combos so Codex 0.144.1 can decode refreshed metadata instead of retaining stale tool capabilities
+
 # v0.5.40-9trip.10 (2026-07-23)
 
 ## Fixes
