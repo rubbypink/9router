@@ -290,12 +290,28 @@ describe("DB SQLite layer — public API parity", () => {
     // Add marker, export, import a different payload, verify reset
     await sqliteDb.setModelAlias("marker", "before");
     const snap = await sqliteDb.exportDb();
+    const signatureRecord = {
+      sessionKeyHash: "signature-session-hash",
+      apiFamily: "gemini",
+      modelFamily: "gemini-2.5-pro",
+      toolCallId: "call_1",
+      functionName: "task_create",
+      argumentsFingerprint: "signature-arguments-hash",
+      thoughtSignature: "local-only-signature",
+      observedAt: 1,
+      lastUsedAt: 1,
+      expiresAt: Date.now() + 60_000,
+    };
+    sqliteDb.upsertGeminiThoughtSignature(signatureRecord);
+    expect(snap).not.toHaveProperty("geminiThoughtSignatures");
+    expect(sqliteDb.getGeminiThoughtSignature(signatureRecord)?.thoughtSignature).toBe("local-only-signature");
 
     await sqliteDb.setModelAlias("marker", "after");
     expect((await sqliteDb.getModelAliases()).marker).toBe("after");
 
     await sqliteDb.importDb(snap);
     expect((await sqliteDb.getModelAliases()).marker).toBe("before");
+    expect(sqliteDb.getGeminiThoughtSignature(signatureRecord)).toBeNull();
     expect(sqliteDb.getThreadRouteBinding("thread-key")).toMatchObject({
       model: "provider/model",
       connectionId: "connection-1",

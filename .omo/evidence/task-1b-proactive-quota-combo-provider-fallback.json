@@ -1,0 +1,10 @@
+{
+  "scenario": "ambiguous-error-fail-open",
+  "attempts": [
+    "/ambiguous"
+  ],
+  "resultCode": "transient_endpoint",
+  "cleanup": {
+    "serverClosed": true
+  }
+}

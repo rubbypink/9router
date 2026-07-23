@@ -1,0 +1,7 @@
+{
+  "scenario": "gemini-signature-restart-recovery",
+  "resultCode": "passed",
+  "cleanup": {
+    "temporaryDatabaseRemoved": true
+  }
+}

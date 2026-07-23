@@ -1,4 +1,5 @@
 export const REQUEST_EXECUTION_POLICY = Object.freeze({
+  maxAttempts: 4,
   minEndpointIntervalMs: 2000,
 });
 

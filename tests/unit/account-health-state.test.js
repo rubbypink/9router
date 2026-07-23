@@ -93,14 +93,91 @@ describe("account health state", () => {
     expect(result).toMatchObject({ shouldFallback: true, cooldownMs: expect.any(Number) });
     expect(result.cooldownMs).toBeGreaterThan(3 * 60 * 60 * 1000);
     expect(account.isActive).toBe(true);
-    expect(account["modelLock_gpt-5.6"]).toBe(new Date(resetAtMs).toISOString());
-    expect(account.accountHealth.models["gpt-5.6"]).toMatchObject({
+    expect(account["modelLock___all"]).toBe(new Date(resetAtMs).toISOString());
+    expect(account.accountHealth.models.__all).toMatchObject({
       state: "unavailable",
       reason: "quota",
+      failureClass: "quota",
+      scope: "account",
       errorCode: "usage_limit_reached",
       retryAt: new Date(resetAtMs).toISOString(),
       source: "provider-reset",
       quotaPolicy: "openai",
+    });
+  });
+
+  it("does not poison account availability for a terminal Gemini continuity error", async () => {
+    const account = connection({ provider: "gemini" });
+    state.connections.push(account);
+    const { markAccountUnavailable } = await import("../../src/sse/services/auth.js");
+
+    const result = await markAccountUnavailable(
+      account.id,
+      400,
+      "Function call is missing a thought_signature in functionCall parts.",
+      "gemini",
+      "gemini-2.5-pro",
+    );
+
+    expect(result).toEqual({ shouldFallback: false, cooldownMs: 0 });
+    expect(state.updateProviderConnection).not.toHaveBeenCalled();
+  });
+
+  it("replicates an explicit provider-wide quota state before another account is selected", async () => {
+    const retryAtMs = Date.now() + 60_000;
+    const first = connection({ id: "conn-1", provider: "openai" });
+    const second = connection({ id: "conn-2", provider: "openai" });
+    state.connections.push(first, second);
+    const { markAccountUnavailable, getProviderModelAvailability } = await import("../../src/sse/services/auth.js");
+
+    await markAccountUnavailable(
+      first.id,
+      429,
+      "provider-wide quota exhausted",
+      "openai",
+      "gpt-5.6",
+      retryAtMs,
+    );
+
+    for (const account of [first, second]) {
+      expect(account["modelLock___all"]).toBe(new Date(retryAtMs).toISOString());
+      expect(account.accountHealth.models.__all).toMatchObject({
+        failureClass: "quota",
+        scope: "provider",
+      });
+    }
+    await expect(getProviderModelAvailability("openai", "gpt-5.6")).resolves.toMatchObject({
+      available: false,
+      reason: "quota",
+    });
+  });
+
+  it("rechecks the selected account against persisted availability before dispatch", async () => {
+    const retryAt = new Date(Date.now() + 60_000).toISOString();
+    const account = connection({
+      provider: "openai",
+      "modelLock_gpt-5.6": retryAt,
+      accountHealth: {
+        version: 2,
+        models: {
+          "gpt-5.6": {
+            state: "unavailable",
+            reason: "quota",
+            failureClass: "quota",
+            retryAt,
+          },
+        },
+        recentErrors: [],
+      },
+    });
+    state.connections.push(account);
+    const { getProviderConnectionAvailability } = await import("../../src/sse/services/auth.js");
+
+    await expect(getProviderConnectionAvailability("openai", account.id, "gpt-5.6")).resolves.toMatchObject({
+      available: false,
+      reason: "quota",
+      failureClass: "quota",
+      retryAfter: retryAt,
     });
   });
 

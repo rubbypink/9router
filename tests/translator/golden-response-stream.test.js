@@ -13,6 +13,7 @@ function stripVolatile(chunks) {
     if (key === "id" && typeof val === "string") {
       return val
         .replace(/-\d{10,}-(\d+)$/, "-<TS>-$1")   // gemini: name-<ts>-idx
+        .replace(/^call_gemini_[a-f0-9]+$/, "call_gemini_<DERIVED>")
         .replace(/^chatcmpl-\d{10,}$/, "chatcmpl-<TS>")  // kiro/ollama stream id
         .replace(/^call_(\d+)_\d{10,}$/, "call_$1_<TS>"); // ollama tool id
     }

@@ -3,6 +3,7 @@ import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/con
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil, getModelLockKey } from "open-sse/services/accountFallback.js";
 import { ACCOUNT_HEALTH_CONFIG } from "open-sse/config/errorConfig.js";
 import { resolveQuotaPolicy } from "open-sse/config/quotaPolicy.js";
+import { classifyUpstreamFailure, FAILURE_CLASS, isAvailabilityFailure } from "open-sse/services/upstreamFailurePolicy.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import * as log from "../utils/logger.js";
 
@@ -43,7 +44,10 @@ function expiredLockKeys(connection, now = Date.now()) {
   });
 }
 
-function accountHealthReason(status, errorText) {
+function accountHealthReason(status, errorText, disposition = null) {
+  if (disposition?.failureClass === FAILURE_CLASS.QUOTA) return "quota";
+  if (disposition?.failureClass === FAILURE_CLASS.NO_CREDENTIALS) return "credentials";
+  if (disposition?.failureClass === FAILURE_CLASS.TRANSIENT_ENDPOINT) return "transient";
   const text = typeof errorText === "string" ? errorText.toLowerCase() : "";
   if (status === 429 || /quota|rate limit|too many requests|capacity/.test(text)) return "quota";
   if ([401, 402, 403].includes(status)) return "credentials";
@@ -183,6 +187,8 @@ function getStoredUnavailability(connection, model, now = Date.now()) {
     if (!Number.isFinite(retryAtMs) || retryAtMs > now) {
       return {
         reason: health.reason || "accountHealth",
+        failureClass: health.failureClass || null,
+        scope: health.scope || null,
         retryAt: Number.isFinite(retryAtMs) ? new Date(retryAtMs).toISOString() : null,
       };
     }
@@ -205,13 +211,15 @@ function getStoredUnavailability(connection, model, now = Date.now()) {
   return null;
 }
 
-function recordAccountHealth(connection, { model, status, errorCode, reason, retryAt, source, quotaPolicy, now }) {
+function recordAccountHealth(connection, { model, status, errorCode, reason, retryAt, source, quotaPolicy, disposition, now }) {
   const current = currentAccountHealth(connection);
   const models = { ...(current?.models || {}) };
   const observedAt = new Date(now).toISOString();
   const entry = {
     state: "unavailable",
-    reason: accountHealthReason(status, reason),
+    reason: accountHealthReason(status, reason, disposition),
+    failureClass: disposition?.failureClass || null,
+    scope: disposition?.scope || null,
     status,
     errorCode: errorCode || null,
     observedAt,
@@ -467,8 +475,37 @@ export async function getProviderModelAvailability(provider, model = null) {
     unavailable?.retryAt,
     isModelLockActive(connection, model) ? getEarliestModelLockUntil(connection) : null,
   ]).filter(Boolean).sort()[0] || null;
-  const quotaBlocked = blocked.some(({ unavailable }) => unavailable?.reason === "quota" || unavailable?.reason === "storedQuotaError");
-  return { available: false, reason: quotaBlocked ? "quota" : "unavailable", retryAfter };
+  const quotaBlocked = blocked.some(({ unavailable }) => (
+    unavailable?.failureClass === FAILURE_CLASS.QUOTA
+    || unavailable?.reason === "quota"
+    || unavailable?.reason === "storedQuotaError"
+  ));
+  const failureClass = quotaBlocked
+    ? FAILURE_CLASS.QUOTA
+    : (blocked.find(({ unavailable }) => unavailable?.failureClass)?.unavailable?.failureClass || null);
+  return { available: false, reason: quotaBlocked ? "quota" : "unavailable", failureClass, retryAfter };
+}
+
+export async function getProviderConnectionAvailability(provider, connectionId, model = null) {
+  const providerId = resolveProviderId(provider);
+  if (FREE_PROVIDERS[providerId]?.noAuth) return { available: true };
+  if (!connectionId) return { available: false, reason: "no_credentials", retryAfter: null };
+
+  const storedConnection = (await getProviderConnections({ provider: providerId, isActive: true }))
+    .find((connection) => connection.id === connectionId);
+  if (!storedConnection) return { available: false, reason: "no_credentials", retryAfter: null };
+
+  const connection = await reconcileConnectionAvailability(storedConnection);
+  const unavailable = getStoredUnavailability(connection, model);
+  const locked = isModelLockActive(connection, model);
+  if (!unavailable && !locked) return { available: true };
+
+  return {
+    available: false,
+    reason: unavailable?.reason || "unavailable",
+    failureClass: unavailable?.failureClass || null,
+    retryAfter: unavailable?.retryAt || (locked ? getEarliestModelLockUntil(connection) : null),
+  };
 }
 
 /**
@@ -677,8 +714,8 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
 }
 
 /**
- * Mark account+model as unavailable — locks modelLock_${model} in DB.
- * All errors (429, 401, 5xx, etc.) lock per model, not per account.
+ * Mark a provider, account, or model route unavailable using the typed
+ * upstream-failure disposition and its evidence-derived reset time.
  * @param {string} connectionId
  * @param {number} status - HTTP status code from upstream
  * @param {string} errorText
@@ -688,64 +725,76 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
  */
 export async function markAccountUnavailable(connectionId, status, errorText, provider = null, model = null, resetsAtMs = null, failure = {}) {
   if (!connectionId || connectionId === "noauth") return { shouldFallback: false, cooldownMs: 0 };
-  const connections = await getProviderConnections({ provider });
+  const connections = await getProviderConnections({ provider, isActive: true });
   const conn = connections.find(c => c.id === connectionId);
-  const backoffLevel = conn?.backoffLevel || 0;
+  if (!conn) return { shouldFallback: false, cooldownMs: 0 };
   const now = Date.now();
-  const preciseReset = Number(resetsAtMs);
-  const hasProviderReset = Number.isFinite(preciseReset) && preciseReset > now;
-  const quotaPolicy = resolveQuotaPolicy(provider);
-
-  let shouldFallback, cooldownMs, newBackoffLevel;
-  if (hasProviderReset) {
-    shouldFallback = true;
-    cooldownMs = preciseReset - now;
-    newBackoffLevel = 0;
-  } else {
-    ({ shouldFallback, cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel));
-    if (shouldFallback && status === 429 && quotaPolicy.fallbackCooldownMs) {
-      cooldownMs = quotaPolicy.fallbackCooldownMs;
-      newBackoffLevel = 0;
-    }
-  }
-  if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
-
-  const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
-  const lockKey = getModelLockKey(model);
-  const lockUpdate = hasProviderReset
-    ? { [lockKey]: new Date(preciseReset).toISOString() }
-    : buildModelLockUpdate(model, cooldownMs);
-  const retryAt = lockUpdate[lockKey];
-  const errorCode = failure?.errorCode ? String(failure.errorCode) : String(status);
-  const accountHealth = recordAccountHealth(conn, {
-    model,
+  const disposition = failure?.disposition || classifyUpstreamFailure({
+    provider,
     status,
-    errorCode,
-    reason,
-    retryAt,
-    source: hasProviderReset ? "provider-reset" : "fallback-policy",
-    quotaPolicy: quotaPolicy.id,
+    error: errorText,
+    errorCode: failure?.errorCode,
+    resetsAtMs,
     now,
   });
-
-  await updateProviderConnection(connectionId, {
-    ...lockUpdate,
-    testStatus: "unavailable",
-    lastError: reason,
-    errorCode,
-    lastErrorAt: new Date().toISOString(),
-    backoffLevel: newBackoffLevel ?? backoffLevel,
-    accountHealth,
-  });
-
-  const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
-  log.warn("AUTH", `${connName} locked ${lockKey} for ${Math.round(cooldownMs / 1000)}s [${status}]`);
-
-  if (provider && status && reason) {
-    console.error(`❌ ${provider} [${status}]: ${reason}`);
+  if (!isAvailabilityFailure(disposition)) return { shouldFallback: false, cooldownMs: 0 };
+  if (disposition.retryMode === "same_target_once" && !failure?.sameTargetRetryExhausted) {
+    return { shouldFallback: false, cooldownMs: disposition.cooldownMs || 0, retrySameTarget: true };
   }
 
-  return { shouldFallback: true, cooldownMs };
+  const preciseReset = Number(disposition.retryAtMs || resetsAtMs);
+  const hasProviderReset = Number.isFinite(preciseReset) && preciseReset > now;
+  const quotaPolicy = resolveQuotaPolicy(provider) || {};
+  const policyStatus = disposition.failureClass === FAILURE_CLASS.QUOTA
+    ? 429
+    : (disposition.failureClass === FAILURE_CLASS.NO_CREDENTIALS ? 401 : status);
+  const fallback = checkFallbackError(policyStatus, errorText, conn.backoffLevel || 0);
+  const cooldownMs = hasProviderReset
+    ? preciseReset - now
+    : (disposition.cooldownMs || (disposition.failureClass === FAILURE_CLASS.QUOTA && quotaPolicy.fallbackCooldownMs) || fallback.cooldownMs || 5_000);
+  const newBackoffLevel = hasProviderReset || disposition.failureClass !== FAILURE_CLASS.QUOTA
+    ? 0
+    : (fallback.newBackoffLevel ?? 0);
+  const scopedModel = disposition.scope === "account" || disposition.scope === "provider" ? null : model;
+  const targets = disposition.scope === "provider" ? connections : [conn];
+  const reason = String(disposition.safeMessage || errorText || "Provider error").slice(0, 100);
+  const errorCode = failure?.errorCode ? String(failure.errorCode) : String(status);
+
+  for (const target of targets) {
+    const lockKey = getModelLockKey(scopedModel);
+    const lockUpdate = hasProviderReset
+      ? { [lockKey]: new Date(preciseReset).toISOString() }
+      : buildModelLockUpdate(scopedModel, cooldownMs);
+    const retryAt = lockUpdate[lockKey];
+    const accountHealth = recordAccountHealth(target, {
+      model: scopedModel,
+      status,
+      errorCode,
+      reason,
+      retryAt,
+      source: hasProviderReset ? "provider-reset" : "fallback-policy",
+      quotaPolicy: quotaPolicy.id || "generic",
+      disposition,
+      now,
+    });
+
+    await updateProviderConnection(target.id, {
+      ...lockUpdate,
+      testStatus: "unavailable",
+      lastError: reason,
+      errorCode,
+      lastErrorAt: new Date(now).toISOString(),
+      backoffLevel: newBackoffLevel,
+      accountHealth,
+    });
+
+    const connName = target.displayName || target.name || target.email || target.id.slice(0, 8);
+    log.warn("AUTH", `${connName} locked ${lockKey} for ${Math.round(cooldownMs / 1000)}s [${status}]`);
+  }
+
+  if (provider && status && reason) console.error(`❌ ${provider} [${status}]: ${reason}`);
+
+  return { shouldFallback: true, cooldownMs, disposition };
 }
 
 /**

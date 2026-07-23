@@ -8,6 +8,7 @@ import { makeBackupDir, backupFile, backupDbLite, pruneOldBackups } from "./back
 import { getAppVersion } from "./version.js";
 import { stringifyJson } from "./helpers/jsonCol.js";
 import { cleanupExpiredSessionAffinityBindings } from "./sessionAffinityCleanup.js";
+import { cleanupExpiredGeminiThoughtSignatures } from "./geminiThoughtSignatureCleanup.js";
 import { getSessionAffinityTtlMs } from "../../../open-sse/config/threadAffinityConfig.js";
 
 // Marker file: prevents re-importing legacy JSON when user wipes data.sqlite.
@@ -251,6 +252,7 @@ export async function runMigrationOnce(adapter) {
   // 2. Additive sync (auto add missing columns/indexes declared in TABLES)
   syncSchemaFromTables(adapter);
   cleanupExpiredSessionAffinityBindings(adapter, { ttlMs: getSessionAffinityTtlMs() });
+  cleanupExpiredGeminiThoughtSignatures(adapter);
 
   // Stamp the schema version we just reached so future boots skip re-backup.
   setMetaSync(adapter, "backupSchemaVersion", SCHEMA_VERSION);

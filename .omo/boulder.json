@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "active_work_id": "9router-session-affinity-release",
+  "active_work_id": "proactive-quota-combo-provider-fallback",
   "works": {
     "9router-session-affinity-release": {
       "work_id": "9router-session-affinity-release",
@@ -11,6 +11,16 @@
       ],
       "status": "active",
       "worktree_path": "/Users/alextran119/Code/9router"
+    },
+    "proactive-quota-combo-provider-fallback": {
+      "work_id": "proactive-quota-combo-provider-fallback",
+      "active_plan": ".omo/plans/proactive-quota-combo-provider-fallback.md",
+      "plan_name": "proactive-quota-combo-provider-fallback",
+      "session_ids": [
+        "codex:019f8c88-e673-7cb0-b78a-4bb1e36d1e36"
+      ],
+      "status": "active",
+      "worktree_path": "/Users/alextran119/Code/9router-proactive-quota-combo-provider-fallback"
     }
   }
 }

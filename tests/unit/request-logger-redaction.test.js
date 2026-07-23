@@ -4,6 +4,8 @@ import {
   maskSensitiveHeaders,
   safeLogPayload,
 } from "../../open-sse/utils/requestLogger.js";
+import { redactThoughtSignatureText, redactThoughtSignatures } from "../../open-sse/translator/concerns/opaqueContinuity.js";
+import { buildRequestDetail } from "../../open-sse/handlers/chatCore/requestDetail.js";
 
 describe("request logger redaction", () => {
   it("always redacts secret-bearing headers", () => {
@@ -38,5 +40,45 @@ describe("request logger redaction", () => {
       type: "object",
       keys: ["input", "model"],
     });
+  });
+
+  it("redacts Gemini signatures without mutating the outbound payload", () => {
+    const signature = "opaque-signature-do-not-log";
+    const payload = {
+      contents: [{ parts: [{ thoughtSignature: signature, functionCall: { name: "task_create" } }] }],
+    };
+
+    const redacted = redactThoughtSignatures(payload);
+
+    expect(redacted.contents[0].parts[0].thoughtSignature).toBe("[REDACTED]");
+    expect(payload.contents[0].parts[0].thoughtSignature).toBe(signature);
+    expect(redactThoughtSignatureText(JSON.stringify(payload))).not.toContain(signature);
+
+    const nestedSerializedPayload = JSON.stringify({ nested: JSON.stringify(payload) });
+    expect(redactThoughtSignatureText(nestedSerializedPayload)).not.toContain(signature);
+  });
+
+  it("does not persist a Gemini signature in request details", () => {
+    const signature = "opaque-signature-detail-only";
+    const detail = buildRequestDetail({
+      provider: "gemini",
+      model: "gemini-2.5-pro",
+      request: { contents: [{ parts: [{ thought_signature: signature }] }] },
+      providerRequest: { contents: [{ parts: [{ thoughtSignature: signature }] }] },
+      providerResponse: { candidates: [{ content: { parts: [{ thoughtSignature: signature }] } }] },
+      response: { content: "ok" },
+    });
+
+    expect(JSON.stringify(detail)).not.toContain(signature);
+  });
+
+  it("redacts request-detail overrides after they are merged", () => {
+    const signature = "opaque-signature-override-only";
+    const detail = buildRequestDetail(
+      { provider: "gemini", model: "gemini-2.5-pro", request: { messages: [] } },
+      { response: { error: JSON.stringify({ thoughtSignature: signature }) } },
+    );
+
+    expect(JSON.stringify(detail)).not.toContain(signature);
   });
 });

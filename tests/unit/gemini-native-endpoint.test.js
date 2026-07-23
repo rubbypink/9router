@@ -249,6 +249,37 @@ describe("Gemini native v1beta endpoint", () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
+  it("preserves a native signed function continuation on the chat path", async () => {
+    const body = {
+      contents: [
+        {
+          role: "model",
+          parts: [{
+            thoughtSignature: "signature-for-test-only",
+            functionCall: { id: "call_1", name: "task_create", args: { title: "quota" } },
+          }],
+        },
+        {
+          role: "user",
+          parts: [{
+            functionResponse: { id: "call_1", name: "task_create", response: { result: "ok" } },
+          }],
+        },
+      ],
+    };
+
+    await POST(makeGeminiRequest("gemini-2.5-flash:generateContent", body), {
+      params: Promise.resolve({ path: ["gemini-2.5-flash:generateContent"] }),
+    });
+
+    const forwarded = await mocks.handleChat.mock.calls[0][0].clone().json();
+    expect(forwarded).toMatchObject({
+      model: "gemini-2.5-flash",
+      stream: false,
+      contents: body.contents,
+    });
+  });
+
   it("does not hijack provider-prefixed non-Gemini audio requests", async () => {
     await POST(makeGeminiRequest("openai/gpt-4o-mini-tts:generateContent", audioBody()), {
       params: Promise.resolve({ path: ["openai", "gpt-4o-mini-tts:generateContent"] }),

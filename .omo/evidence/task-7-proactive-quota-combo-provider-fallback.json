@@ -1,0 +1,8 @@
+{
+  "scenario": "sensitive-log-sentinel",
+  "attempts": [],
+  "resultCode": "sanitized_routing_output",
+  "cleanup": {
+    "serverClosed": true
+  }
+}

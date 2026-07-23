@@ -5,7 +5,14 @@ import { cloakClaudeTools } from "../utils/claudeCloaking.js";
 import { filterToOpenAIFormat } from "./formats/openai.js";
 import { normalizeThinkingConfig } from "../services/provider.js";
 import { applyThinking, captureThinking } from "./concerns/thinkingUnified.js";
-import { captureSessionId } from "../utils/sessionManager.js";
+import { captureSessionId, captureStableClientSessionId } from "../utils/sessionManager.js";
+import {
+  createGeminiContinuationContext,
+  geminiApiFamilyForFormat,
+  GeminiThoughtSignatureError,
+  getGeminiContinuationState,
+  hasNativeGeminiSignedFunctionCall,
+} from "../services/geminiThoughtSignatures.js";
 import { AntigravityExecutor } from "../executors/antigravity.js";
 import { PROVIDERS } from "../providers/index.js";
 import { stripOpaqueContinuity } from "./concerns/opaqueContinuity.js";
@@ -83,8 +90,36 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
 
   // Capture session id from the original body (envelope still intact, e.g. antigravity request.sessionId)
   const clientSessionId = captureSessionId(result, credentials, connectionId, targetFormat);
+  const geminiApiFamily = geminiApiFamilyForFormat(targetFormat);
+  const stableClientSessionId = captureStableClientSessionId(result, credentials, targetFormat);
+  const geminiContinuationContext = geminiApiFamily
+    ? createGeminiContinuationContext({
+      sessionId: stableClientSessionId,
+      apiFamily: geminiApiFamily,
+      model,
+    })
+    : null;
+  const geminiContinuationState = getGeminiContinuationState(stableClientSessionId, result);
+  const geminiBindings = geminiContinuationState.bindings;
+  const hasSignedGeminiContinuation = hasNativeGeminiSignedFunctionCall(result) || geminiBindings.length > 0;
+  if (geminiContinuationState.hasMismatch) {
+    throw new GeminiThoughtSignatureError();
+  }
+  if (hasSignedGeminiContinuation && !geminiApiFamily) {
+    throw new GeminiThoughtSignatureError();
+  }
+  if (geminiBindings.length > 0 && !geminiBindings.every((binding) => (
+    binding.apiFamily === geminiContinuationContext?.apiFamily
+    && binding.modelFamily === geminiContinuationContext?.modelFamily
+  ))) {
+    throw new GeminiThoughtSignatureError();
+  }
   // Expose to downstream translators (gemini-cli/antigravity envelopes) that run after envelope is stripped
-  if (credentials) credentials._clientSessionId = clientSessionId;
+  if (credentials) {
+    credentials._clientSessionId = clientSessionId;
+    if (geminiContinuationContext) credentials._geminiContinuationContext = geminiContinuationContext;
+    else delete credentials._geminiContinuationContext;
+  }
 
   // If same format, skip translation steps
   if (sourceFormat !== targetFormat) {

@@ -1,0 +1,12 @@
+{
+  "scenario": "nvidia-timeout-retry-then-fallback",
+  "attempts": [
+    "/nvidia",
+    "/nvidia",
+    "/fallback"
+  ],
+  "resultCode": "same_target_retry_then_fallback",
+  "cleanup": {
+    "serverClosed": true
+  }
+}

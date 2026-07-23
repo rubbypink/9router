@@ -21,3 +21,29 @@ export function stripOpaqueContinuity(value) {
   }
   return value;
 }
+
+export function redactThoughtSignatures(value) {
+  if (typeof value === "string") return redactThoughtSignatureText(value);
+  if (Array.isArray(value)) return value.map(redactThoughtSignatures);
+  if (!value || typeof value !== "object") return value;
+
+  const redacted = {};
+  for (const [key, nested] of Object.entries(value)) {
+    redacted[key] = key === "thoughtSignature" || key === "thought_signature"
+      ? "[REDACTED]"
+      : redactThoughtSignatures(nested);
+  }
+  return redacted;
+}
+
+export function redactThoughtSignatureText(value) {
+  if (typeof value !== "string") return value;
+  const direct = value.replace(
+    /("(?:thoughtSignature|thought_signature)"\s*:\s*)"(?:\\.|[^"\\])*"/g,
+    '$1"[REDACTED]"',
+  );
+  return direct.replace(
+    /(\\"(?:thoughtSignature|thought_signature)\\"\s*:\s*)\\"(?:\\\\.|[^\\"\\\\])*\\"/g,
+    '$1\\"[REDACTED]\\"',
+  );
+}

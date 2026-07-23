@@ -137,9 +137,9 @@ Main flow modules:
 
 Primary state DB:
 
-- `src/lib/localDb.js`
-- file: `${DATA_DIR}/db.json` (or `~/.9router/db.json` when `DATA_DIR` is unset)
-- entities: providerConnections, providerNodes, modelAliases, combos, apiKeys, settings, pricing
+- `src/lib/db/` with `src/lib/localDb.js` as the compatibility export
+- file: `${DATA_DIR}/db/data.sqlite` (or `~/.9router/db/data.sqlite` when `DATA_DIR` is unset)
+- entities: providerConnections, providerNodes, modelAliases, combos, apiKeys, settings, pricing, session route bindings, and local Gemini thought-signature continuity records
 
 Usage DB:
 
@@ -237,7 +237,11 @@ flowchart TD
     Q -- No --> R[Return all unavailable]
 ```
 
-Fallback decisions are driven by `open-sse/services/accountFallback.js` using status codes and error-message heuristics.
+Fallback decisions use the typed disposition in `open-sse/services/upstreamFailurePolicy.js`. Combo preflight skips only candidates with persisted evidence of active provider/account/model unavailability, then the selected connection is rechecked before its executor dispatch. Account exhaustion is returned to the combo as an eligible fallback result; protocol continuity failures and the four-dispatch budget are terminal routing results. Priority combos retain order, while round-robin selects only the first route for a new affinity session and retains an established route until an eligible failure.
+
+Native Gemini tool calls are a continuity boundary: the bridge preserves native signed parts and stores an opaque signature locally for an exact, hashed stable session/API-family/model/tool/arguments match. A missing or incompatible signature returns a typed client error without health mutation or combo fallback; the signature itself is neither exported nor logged. At the 30-day expiry, the token is deleted and a bounded hash-only tombstone keeps the old continuation terminal for one additional bounded retention window.
+
+NVIDIA `504 FUNCTION_INVOCATION_TIMEOUT` is a narrow pre-output transient: one same-target retry is allowed, then the normal account/combo fallback path applies. It is not quota evidence.
 
 ## OAuth Onboarding and Token Refresh Lifecycle
 
@@ -377,7 +381,7 @@ erDiagram
 
 Physical storage files:
 
-- main state: `${DATA_DIR}/db.json` (or `~/.9router/db.json`)
+- main state: `${DATA_DIR}/db/data.sqlite` (or `~/.9router/db/data.sqlite`)
 - usage stats: `~/.9router/usage.json`
 - request log lines: `~/.9router/log.txt`
 - optional translator/request debug sessions: `<repo>/logs/...`

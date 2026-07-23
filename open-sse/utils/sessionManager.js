@@ -120,8 +120,9 @@ function extractClaudeCodeSession(userId) {
 
 // Lowercase-key lookup for raw client headers
 function headerValue(headers, key) {
-    if (!headers || typeof headers !== "object") return null;
-    return normalizeSessionId(headers[key] ?? headers[key.toLowerCase()]);
+  if (!headers || typeof headers !== "object") return null;
+    const fromHeaders = typeof headers.get === "function" ? headers.get(key) : null;
+    return normalizeSessionId(fromHeaders ?? headers[key] ?? headers[key.toLowerCase()]);
 }
 
 // Read client-provided session id from headers/body (no generation)
@@ -245,6 +246,10 @@ export function resolveContinuationId({ sessionId, connectionId, scope = "", eph
 // Capture session id from request body + credentials (envelope still intact here)
 export function captureSessionId(body, credentials, connectionId, scope = "") {
     return resolveSessionId({ headers: credentials?.rawHeaders, body, connectionId, scope });
+}
+
+export function captureStableClientSessionId(body, credentials, scope = "") {
+    return extractClientSessionId(credentials?.rawHeaders, body, scope);
 }
 
 // Convert any session id to Antigravity numeric format "-<int64>" (matches real AG / CLIProxyAPI).

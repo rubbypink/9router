@@ -12,6 +12,18 @@ const runtimeState = {
   waitingEndpointStarts: 0,
 };
 
+export const UPSTREAM_ATTEMPT_BUDGET_ERROR_CODE = "upstream_attempt_budget_exhausted";
+export const UPSTREAM_DISPATCH_INELIGIBLE_ERROR_CODE = "upstream_dispatch_ineligible";
+
+export class UpstreamAttemptBudgetError extends Error {
+  constructor(maxAttempts) {
+    super(`Upstream dispatch budget exhausted after ${maxAttempts} attempts`);
+    this.name = "UpstreamAttemptBudgetError";
+    this.code = UPSTREAM_ATTEMPT_BUDGET_ERROR_CODE;
+    this.maxAttempts = maxAttempts;
+  }
+}
+
 function defaultSleep(ms, signal) {
   if (ms <= 0) return Promise.resolve();
   return new Promise((resolve, reject) => {
@@ -93,6 +105,7 @@ async function paceEndpointStart(input, { intervalMs, now, sleep, signal }) {
 export function createUpstreamRequestState(overrides = {}) {
   return {
     attempts: 0,
+    maxAttempts: overrides.maxAttempts ?? REQUEST_EXECUTION_POLICY.maxAttempts,
     minEndpointIntervalMs: overrides.minEndpointIntervalMs ?? REQUEST_EXECUTION_POLICY.minEndpointIntervalMs,
     now: overrides.now || Date.now,
     sleep: overrides.sleep || defaultSleep,
@@ -129,6 +142,9 @@ export async function beforeUpstreamRequest(input, { signal } = {}) {
   const inputOrigin = endpointOrigin(input);
   const isProviderEndpoint = !store?.dispatchOrigins?.size || store.dispatchOrigins.has(inputOrigin);
   if (requestState && store.activeProvider && isProviderEndpoint) {
+    if (requestState.attempts >= requestState.maxAttempts) {
+      throw new UpstreamAttemptBudgetError(requestState.maxAttempts);
+    }
     requestState.attempts++;
     requestState.lastEndpoint = canonicalEndpointKey(input);
     requestState.lastProvider = store.activeProvider;
