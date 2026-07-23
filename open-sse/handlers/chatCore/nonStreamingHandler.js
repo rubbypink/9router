@@ -11,6 +11,7 @@ import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { restoreResponsesToolIdentity } from "../../translator/concerns/toolNamespace.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
+import { createGeminiToolCallId, storeGeminiThoughtSignature } from "../../services/geminiThoughtSignatures.js";
 
 function parseToolArguments(value) {
   if (!value) return {};
@@ -125,7 +126,7 @@ export function openAICompletionToResponsesResponse(responseBody, toolNameMap = 
 /**
  * Translate non-streaming response body from provider format → OpenAI format.
  */
-export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat) {
+export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, { geminiContinuationContext = null } = {}) {
   if (targetFormat === sourceFormat) return responseBody;
   if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.CLAUDE) {
     return openAICompletionToClaudeMessage(responseBody);
@@ -148,10 +149,28 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
         if (part.thought === true && part.text) reasoningContent += part.text;
         else if (part.text !== undefined) textContent += part.text;
         if (part.functionCall) {
+          const functionName = part.functionCall.name;
+          const functionArguments = part.functionCall.args || {};
+          const toolCallId = createGeminiToolCallId(geminiContinuationContext, {
+            upstreamToolCallId: part.functionCall.id,
+            responseId: response.responseId,
+            ordinal: toolCalls.length,
+            functionName,
+            arguments: functionArguments,
+          });
+          const thoughtSignature = part.thoughtSignature || part.thought_signature;
+          if (thoughtSignature) {
+            storeGeminiThoughtSignature(geminiContinuationContext, {
+              toolCallId,
+              functionName,
+              arguments: functionArguments,
+              thoughtSignature,
+            });
+          }
           toolCalls.push({
-            id: `call_${part.functionCall.name}_${Date.now()}_${toolCalls.length}`,
+            id: toolCallId,
             type: "function",
-            function: { name: part.functionCall.name, arguments: JSON.stringify(part.functionCall.args || {}) }
+            function: { name: functionName, arguments: JSON.stringify(functionArguments) }
           });
         }
         // Handle inline image data (from image generation models)
@@ -260,7 +279,7 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
 /**
  * Handle non-streaming response from provider.
  */
-export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, trackDone, appendLog, pxpipe, reqTag, log }) {
+export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, trackDone, appendLog, pxpipe, reqTag, log, geminiContinuationContext }) {
   trackDone();
   const contentType = providerResponse.headers.get("content-type") || "";
   let responseBody;
@@ -301,7 +320,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
 
   let translatedResponse = needsTranslation(targetFormat, sourceFormat)
-    ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
+    ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, { geminiContinuationContext })
     : responseBody;
   if (sourceFormat === FORMATS.OPENAI_RESPONSES && targetFormat !== FORMATS.OPENAI_RESPONSES) {
     translatedResponse = openAICompletionToResponsesResponse(translatedResponse, toolNameMap);

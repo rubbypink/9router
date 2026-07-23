@@ -2,6 +2,7 @@ import "open-sse/index.js";
 
 import {
   getProviderCredentials,
+  getProviderConnectionAvailability,
   getProviderModelAvailability,
   markAccountUnavailable,
   clearAccountError,
@@ -21,6 +22,15 @@ import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { ACCOUNT_EXHAUSTED_ERROR_CODE } from "open-sse/config/errorConfig.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
+import { getTargetFormat } from "open-sse/services/provider.js";
+import { getModelTargetFormat, PROVIDER_ID_TO_ALIAS } from "open-sse/config/providerModels.js";
+import { captureStableClientSessionId } from "open-sse/utils/sessionManager.js";
+import {
+  createGeminiContinuationContext,
+  geminiApiFamilyForFormat,
+  getGeminiContinuationState,
+  hasNativeGeminiSignedFunctionCall,
+} from "open-sse/services/geminiThoughtSignatures.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
@@ -32,6 +42,7 @@ import {
 import {
   createUpstreamRequestState,
   runWithUpstreamRequestState,
+  UPSTREAM_DISPATCH_INELIGIBLE_ERROR_CODE,
 } from "open-sse/services/requestExecutionState.js";
 
 function markAffinityComboFallback(routeContext) {
@@ -45,10 +56,43 @@ function prepareAffinityComboRoute(routeContext, comboModels) {
   if (pinnedModel && !comboModels.includes(pinnedModel)) markAffinityComboFallback(routeContext);
 }
 
-async function getComboModelAvailability(modelStr) {
+function getGeminiContinuationAvailability(modelInfo, body, clientRawRequest) {
+  const alias = PROVIDER_ID_TO_ALIAS[modelInfo.provider] || modelInfo.provider;
+  const targetFormat = getModelTargetFormat(alias, modelInfo.model) || getTargetFormat(modelInfo.provider);
+  const apiFamily = geminiApiFamilyForFormat(targetFormat);
+  const rawHeaders = clientRawRequest?.headers || {};
+  const stableSessionId = captureStableClientSessionId(body, { rawHeaders }, targetFormat);
+  const continuationState = getGeminiContinuationState(stableSessionId, body);
+  const bindings = continuationState.bindings;
+  const nativeSignedContinuation = hasNativeGeminiSignedFunctionCall(body);
+  if (!nativeSignedContinuation && bindings.length === 0 && !continuationState.hasMismatch) return null;
+
+  const context = createGeminiContinuationContext({
+    sessionId: stableSessionId,
+    apiFamily,
+    model: modelInfo.model,
+  });
+  const bindingCompatible = bindings.length === 0 || bindings.every((binding) => (
+    binding.apiFamily === context?.apiFamily && binding.modelFamily === context?.modelFamily
+  ));
+  const nativeCompatible = !nativeSignedContinuation || apiFamily === "gemini";
+  if (!continuationState.hasMismatch && apiFamily && bindingCompatible && nativeCompatible) {
+    return { continuationCompatible: true };
+  }
+  return {
+    available: false,
+    reason: "gemini_signed_tool_incompatible",
+    terminalRoutingCode: "gemini_thought_signature_missing",
+  };
+}
+
+async function getComboModelAvailability(modelStr, body = null, clientRawRequest = null) {
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo?.provider) return { available: true };
-  return getProviderModelAvailability(modelInfo.provider, modelInfo.model);
+  const continuation = getGeminiContinuationAvailability(modelInfo, body, clientRawRequest);
+  if (continuation?.available === false) return continuation;
+  const availability = await getProviderModelAvailability(modelInfo.provider, modelInfo.model);
+  return continuation ? { ...availability, ...continuation } : availability;
 }
 
 function markAffinityComboSelection(routeContext, comboStrategy, model) {
@@ -159,7 +203,7 @@ export async function handleChat(request, clientRawRequest = null) {
         comboStrategy,
         comboStickyLimit,
         preferredModel: routeContext?.binding?.model || null,
-        getModelAvailability: getComboModelAvailability,
+        getModelAvailability: (candidate) => getComboModelAvailability(candidate, body, clientRawRequest),
         onModelSelected: ({ model }) => markAffinityComboSelection(routeContext, comboStrategy, model),
         onEligibleFallback: () => markAffinityComboFallback(routeContext),
       });
@@ -243,7 +287,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         comboStrategy,
         comboStickyLimit,
         preferredModel: routeContext?.binding?.model || null,
-        getModelAvailability: getComboModelAvailability,
+        getModelAvailability: (candidate) => getComboModelAvailability(candidate, body, clientRawRequest),
         onModelSelected: ({ model }) => markAffinityComboSelection(routeContext, comboStrategy, model),
         onEligibleFallback: () => markAffinityComboFallback(routeContext),
       });
@@ -342,53 +386,81 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     // Use shared chatCore
     const chatSettings = await getSettings();
     const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
-    const result = await handleChatCore({
-      body: { ...body, model: `${provider}/${model}` },
-      modelInfo: { provider, model },
-      credentials: refreshedCredentials,
-      log,
-      clientRawRequest,
-      connectionId: credentials.connectionId,
-      userAgent,
-      apiKey,
-      ccFilterNaming: !!chatSettings.ccFilterNaming,
-      rtkEnabled: !!chatSettings.rtkEnabled,
-      headroomEnabled: !!chatSettings.headroomEnabled,
-      headroomUrl: chatSettings.headroomUrl || DEFAULT_HEADROOM_URL,
-      headroomCompressUserMessages: !!chatSettings.headroomCompressUserMessages,
-      cavemanEnabled: !!chatSettings.cavemanEnabled,
-      cavemanLevel: chatSettings.cavemanLevel || "full",
-      ponytailEnabled: !!chatSettings.ponytailEnabled,
-      ponytailLevel: chatSettings.ponytailLevel || "full",
-      pxpipeEnabled: !!chatSettings.pxpipeEnabled,
-      pxpipeMinChars: chatSettings.pxpipeMinChars,
-      pxpipeTimeoutMs: chatSettings.pxpipeTimeoutMs,
-      // Lazily warms the in-process module on first use; null when not installed (fail-open)
-      pxpipeTransform: chatSettings.pxpipeEnabled ? await getPxpipeTransform() : null,
-      onPxpipeEvent: appendPxpipeEvent,
-      providerThinking,
-      // Detect source format by endpoint + body
-      sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
-      onCredentialsRefreshed: async (newCreds) => {
-        await updateProviderCredentials(credentials.connectionId, {
-          ...newCreds,
-          existingProviderSpecificData: credentials.providerSpecificData,
-          testStatus: "active"
-        });
-      },
-      onRequestSuccess: async () => {
-        if (routeContext) {
-          routeContext.coordinator.markSuccess(
-            routeContext.sessionKey,
-            routeContext.requestedModel,
-            selectedRoute,
-          );
+    let result;
+    let sameTargetRetried = false;
+    let reselectAccount = false;
+    do {
+      result = await handleChatCore({
+        body: { ...body, model: `${provider}/${model}` },
+        modelInfo: { provider, model },
+        credentials: refreshedCredentials,
+        log,
+        clientRawRequest,
+        connectionId: credentials.connectionId,
+        userAgent,
+        apiKey,
+        ccFilterNaming: !!chatSettings.ccFilterNaming,
+        rtkEnabled: !!chatSettings.rtkEnabled,
+        headroomEnabled: !!chatSettings.headroomEnabled,
+        headroomUrl: chatSettings.headroomUrl || DEFAULT_HEADROOM_URL,
+        headroomCompressUserMessages: !!chatSettings.headroomCompressUserMessages,
+        cavemanEnabled: !!chatSettings.cavemanEnabled,
+        cavemanLevel: chatSettings.cavemanLevel || "full",
+        ponytailEnabled: !!chatSettings.ponytailEnabled,
+        ponytailLevel: chatSettings.ponytailLevel || "full",
+        pxpipeEnabled: !!chatSettings.pxpipeEnabled,
+        pxpipeMinChars: chatSettings.pxpipeMinChars,
+        pxpipeTimeoutMs: chatSettings.pxpipeTimeoutMs,
+        // Lazily warms the in-process module on first use; null when not installed (fail-open)
+        pxpipeTransform: chatSettings.pxpipeEnabled ? await getPxpipeTransform() : null,
+        onPxpipeEvent: appendPxpipeEvent,
+        providerThinking,
+        // Detect source format by endpoint + body
+        sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
+        onCredentialsRefreshed: async (newCreds) => {
+          await updateProviderCredentials(credentials.connectionId, {
+            ...newCreds,
+            existingProviderSpecificData: credentials.providerSpecificData,
+            testStatus: "active"
+          });
+        },
+        onRequestSuccess: async () => {
+          if (routeContext) {
+            routeContext.coordinator.markSuccess(
+              routeContext.sessionKey,
+              routeContext.requestedModel,
+              selectedRoute,
+            );
+          }
+          await clearAccountError(credentials.connectionId, credentials, model);
+        },
+        onBeforeUpstreamDispatch: async () => {
+          const availability = await getProviderConnectionAvailability(provider, credentials.connectionId, model);
+          if (availability.available) return;
+          const error = new Error("Selected account became unavailable before dispatch");
+          error.code = UPSTREAM_DISPATCH_INELIGIBLE_ERROR_CODE;
+          error.availability = availability;
+          throw error;
         }
-        await clearAccountError(credentials.connectionId, credentials, model);
-      }
-    });
+      });
 
-    if (result.success || result.routingFailure) return result.response;
+      if (result.success || result.routingFailure) return result.response;
+      if (result.errorCode === UPSTREAM_DISPATCH_INELIGIBLE_ERROR_CODE) {
+        excludeConnectionIds.add(credentials.connectionId);
+        lastError = result.error;
+        lastStatus = result.status;
+        reselectAccount = true;
+        break;
+      }
+      if (result.disposition?.retryMode === "same_target_once" && !sameTargetRetried) {
+        sameTargetRetried = true;
+        log.warn("FALLBACK", `↻ ACC:${credentials.connectionName} transient endpoint timeout → SAME ACCOUNT RETRY`);
+        continue;
+      }
+      break;
+    } while (true);
+
+    if (reselectAccount) continue;
 
     // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
     const { shouldFallback } = await markAccountUnavailable(
@@ -398,7 +470,11 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       provider,
       model,
       result.resetsAtMs,
-      { errorCode: result.errorCode },
+      {
+        errorCode: result.errorCode,
+        disposition: result.disposition,
+        sameTargetRetryExhausted: sameTargetRetried,
+      },
     );
 
     if (shouldFallback) {

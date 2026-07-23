@@ -1,6 +1,7 @@
 import { saveRequestUsage, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { COLORS } from "../../utils/stream.js";
 import { canonicalizeUsage } from "../../utils/usageTracking.js";
+import { redactThoughtSignatures } from "../../translator/concerns/opaqueContinuity.js";
 
 const OPTIONAL_PARAMS = [
   "temperature", "top_p", "top_k",
@@ -58,20 +59,27 @@ export function extractUsageFromResponse(responseBody) {
 }
 
 export function buildRequestDetail(base, overrides = {}) {
-  return {
+  const detail = {
     provider: base.provider || "unknown",
     model: base.model || "unknown",
     connectionId: base.connectionId || undefined,
     timestamp: new Date().toISOString(),
     latency: base.latency || { ttft: 0, total: 0 },
     tokens: base.tokens || { prompt_tokens: 0, completion_tokens: 0 },
-    request: base.request,
-    providerRequest: base.providerRequest || null,
-    providerResponse: base.providerResponse || null,
-    response: base.response || {},
+    request: redactThoughtSignatures(base.request),
+    providerRequest: redactThoughtSignatures(base.providerRequest) || null,
+    providerResponse: redactThoughtSignatures(base.providerResponse) || null,
+    response: redactThoughtSignatures(base.response) || {},
     pxpipe: base.pxpipe || undefined,
     status: base.status || "success",
     ...overrides
+  };
+  return {
+    ...detail,
+    request: redactThoughtSignatures(detail.request),
+    providerRequest: redactThoughtSignatures(detail.providerRequest) || null,
+    providerResponse: redactThoughtSignatures(detail.providerResponse) || null,
+    response: redactThoughtSignatures(detail.response) || {},
   };
 }
 

@@ -7,7 +7,7 @@ import { createStreamController } from "../utils/streamHandler.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
 import { getModelTargetFormat, getModelStrip, getModelUpstreamId, getModelType, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { PROVIDERS } from "../config/providers.js";
-import { createErrorResult, createTypedErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
+import { createErrorResult, createRoutingErrorResult, createTypedErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
 import { HTTP_STATUS, TOKEN_SAVER_HEADER } from "../config/runtimeConfig.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import { trackPendingRequest, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
@@ -26,6 +26,7 @@ import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, isHeadr
 import { compressWithPxpipe } from "../rtk/pxpipe.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
+import { redactThoughtSignatureText } from "../translator/concerns/opaqueContinuity.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { extractThinking } from "../translator/concerns/thinkingUnified.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
@@ -33,6 +34,8 @@ import { getUnsupportedResponsesAdapterFeatures } from "../translator/concerns/t
 import { RESPONSES_ADAPTER_ERROR_CODE } from "../config/responsesConfig.js";
 import {
   runAsUpstreamDispatch,
+  UPSTREAM_ATTEMPT_BUDGET_ERROR_CODE,
+  UPSTREAM_DISPATCH_INELIGIBLE_ERROR_CODE,
 } from "../services/requestExecutionState.js";
 
 /**
@@ -42,7 +45,7 @@ import {
  * @param {object} options.credentials - Provider credentials
  * @param {string} options.sourceFormatOverride - Override detected source format (e.g. "openai-responses")
  */
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onBeforeUpstreamDispatch, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
   // Stable per-session color so all lines of one CLI conversation share a tag
@@ -154,7 +157,14 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     // Normalize newer Cowork/CC beta shapes (adaptive thinking, mid-conversation system) the API rejects
     if (clientTool === "claude") normalizeClaudePassthrough(translatedBody, translatedBody.model);
   } else {
-    translatedBody = translateRequest(sourceFormat, targetFormat, upstreamModel, body, stream, credentials, provider, reqLogger, stripList, connectionId, clientTool);
+    try {
+      translatedBody = translateRequest(sourceFormat, targetFormat, upstreamModel, body, stream, credentials, provider, reqLogger, stripList, connectionId, clientTool);
+    } catch (error) {
+      if (error?.code === "gemini_thought_signature_missing") {
+        return createRoutingErrorResult(HTTP_STATUS.BAD_REQUEST, "Gemini thought signature is required for this tool continuation", error.code);
+      }
+      throw error;
+    }
     if (!translatedBody) {
       trackPendingRequest(model, provider, connectionId, false, true);
       return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Failed to translate request for ${sourceFormat} → ${targetFormat}`);
@@ -328,6 +338,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     providerEndpointHints,
   );
   try {
+    await onBeforeUpstreamDispatch?.();
     const result = await executeProviderRequest();
     providerResponse = result.response;
     providerUrl = result.url;
@@ -353,9 +364,15 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       streamController.handleError(error);
       return createErrorResult(499, "Request aborted");
     }
+    if (error?.code === UPSTREAM_ATTEMPT_BUDGET_ERROR_CODE) {
+      return createRoutingErrorResult(HTTP_STATUS.SERVICE_UNAVAILABLE, "Upstream dispatch budget exhausted", error.code);
+    }
+    if (error?.code === UPSTREAM_DISPATCH_INELIGIBLE_ERROR_CODE) {
+      return createErrorResult(HTTP_STATUS.SERVICE_UNAVAILABLE, error.message, null, { errorCode: error.code });
+    }
     const errMsg = formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY);
     if (log?.errorLine) {
-      log.errorLine(reqTag, "✗", `ERROR 502 · ${provider}/${model} · ${Date.now() - requestStartTime}ms\n    ${errMsg}${error.stack ? `\n    ${error.stack}` : ""}`);
+      log.errorLine(reqTag, "✗", `ERROR 502 · ${provider}/${model} · ${Date.now() - requestStartTime}ms\n    ${errMsg}${error.stack ? `\n    ${redactThoughtSignatureText(error.stack)}` : ""}`);
     }
     return createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg);
   }
@@ -363,7 +380,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Provider returned error
   if (!providerResponse.ok) {
     trackPendingRequest(model, provider, connectionId, false, true);
-    const { statusCode, message, resetsAtMs, errorCode } = await parseUpstreamError(providerResponse, executor);
+    const { statusCode, message, resetsAtMs, errorCode, disposition } = await parseUpstreamError(providerResponse, executor);
     appendRequestLog({ model, provider, connectionId, status: `FAILED ${statusCode}` }).catch(() => { });
     saveRequestDetail(buildRequestDetail({
       provider, model, connectionId,
@@ -382,10 +399,29 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       log.errorLine(reqTag, "✗", `ERROR ${statusCode} · ${provider}/${model} · ${Date.now() - requestStartTime}ms${urlStr}\n    ${errMsg}`);
     }
     reqLogger.logError(new Error(message), finalBody || translatedBody);
-    return createErrorResult(statusCode, errMsg, resetsAtMs, { errorCode });
+    if (disposition?.failureClass === "protocol_continuity") {
+      return createRoutingErrorResult(statusCode, message, "gemini_thought_signature_missing");
+    }
+    return createErrorResult(statusCode, errMsg, resetsAtMs, { errorCode, disposition });
   }
 
-  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, reqTag, log };
+  const sharedCtx = {
+    provider,
+    model,
+    body,
+    stream,
+    translatedBody,
+    finalBody,
+    requestStartTime,
+    connectionId,
+    apiKey,
+    clientRawRequest,
+    onRequestSuccess,
+    pxpipe: pxpipeSummary,
+    reqTag,
+    log,
+    geminiContinuationContext: credentials?._geminiContinuationContext || null,
+  };
   const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => { });
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
 

@@ -35,16 +35,20 @@ describe("upstream request execution state", () => {
     expect(state.attempts).toBe(2);
   });
 
-  it("allows every provider attempt selected by configured routing", async () => {
+  it("rejects a fifth provider dispatch before opening its endpoint", async () => {
     const state = createUpstreamRequestState({ minEndpointIntervalMs: 0 });
 
     await runWithUpstreamRequestState(state, async () => {
-      for (let attempt = 0; attempt < 5; attempt++) {
+      for (let attempt = 0; attempt < 4; attempt++) {
         await runAsUpstreamDispatch("openai", () => beforeUpstreamRequest(providerEndpoint), [providerEndpoint]);
       }
+
+      await expect(
+        runAsUpstreamDispatch("openai", () => beforeUpstreamRequest(providerEndpoint), [providerEndpoint]),
+      ).rejects.toMatchObject({ code: "upstream_attempt_budget_exhausted" });
     });
 
-    expect(state.attempts).toBe(5);
+    expect(state.attempts).toBe(4);
   });
 
   it("does not charge provider attempt budget for a media prefetch origin", async () => {

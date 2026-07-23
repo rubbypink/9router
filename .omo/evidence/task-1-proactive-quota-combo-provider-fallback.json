@@ -1,0 +1,10 @@
+{
+  "scenario": "classified-known-quota-skip",
+  "attempts": [
+    "/provider-b/model-b"
+  ],
+  "resultCode": 200,
+  "cleanup": {
+    "serverClosed": true
+  }
+}

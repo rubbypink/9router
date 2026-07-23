@@ -6,6 +6,7 @@ import { toOpenAIUsage } from "../concerns/usage.js";
 import { reasoningDelta } from "../concerns/reasoning.js";
 import { encodeDataUri } from "../concerns/image.js";
 import { toOpenAIFinish } from "../concerns/finishReason.js";
+import { createGeminiToolCallId, storeGeminiThoughtSignature } from "../../services/geminiThoughtSignatures.js";
 
 // Build chunk meta for current gemini state
 function chunkMeta(state) {
@@ -13,18 +14,33 @@ function chunkMeta(state) {
 }
 
 // Build a tool_call chunk from a gemini functionCall part (shared by sig/non-sig branches)
-function emitFunctionCall(functionCall, state) {
+function emitFunctionCall(functionCall, state, thoughtSignature = null) {
   const rawName = functionCall.name;
   // Restore original tool name from mapping (AG cloaking)
   const fcName = state.toolNameMap?.get(rawName) || rawName;
   const fcArgs = functionCall.args || {};
   const toolCallIndex = state.functionIndex++;
+  const toolCallId = createGeminiToolCallId(state.geminiContinuationContext, {
+    upstreamToolCallId: functionCall.id,
+    responseId: state.messageId,
+    ordinal: toolCallIndex,
+    functionName: fcName,
+    arguments: fcArgs,
+  });
   const toolCall = {
-    id: `${fcName}-${Date.now()}-${toolCallIndex}`,
+    id: toolCallId,
     index: toolCallIndex,
     type: OPENAI_BLOCK.FUNCTION,
     function: { name: fcName, arguments: JSON.stringify(fcArgs) },
   };
+  if (thoughtSignature) {
+    storeGeminiThoughtSignature(state.geminiContinuationContext, {
+      toolCallId,
+      functionName: fcName,
+      arguments: fcArgs,
+      thoughtSignature,
+    });
+  }
   // Keep Gemini bookkeeping separate from the shared translator state.toolCalls map.
   // The downstream OpenAI→Claude translator uses state.toolCalls for Claude block
   // metadata; pre-populating it here makes Anthropic tool deltas lose index.
@@ -73,7 +89,7 @@ export function geminiToOpenAIResponse(chunk, state) {
         }
         
         if (hasFunctionCall) {
-          results.push(emitFunctionCall(part.functionCall, state));
+          results.push(emitFunctionCall(part.functionCall, state, hasThoughtSig));
         }
         continue;
       }
@@ -144,4 +160,3 @@ register(FORMATS.GEMINI, FORMATS.OPENAI, null, geminiToOpenAIResponse);
 register(FORMATS.GEMINI_CLI, FORMATS.OPENAI, null, geminiToOpenAIResponse);
 register(FORMATS.ANTIGRAVITY, FORMATS.OPENAI, null, geminiToOpenAIResponse);
 register(FORMATS.VERTEX, FORMATS.OPENAI, null, geminiToOpenAIResponse);
-

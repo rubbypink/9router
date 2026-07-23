@@ -117,4 +117,37 @@ describe("upstream retry hints", () => {
 
     expect(result.resetsAtMs).toBeGreaterThanOrEqual(before + 3_400);
   });
+
+  it("classifies the exact NVIDIA function timeout without retaining its opaque request suffix", async () => {
+    const response = new Response(JSON.stringify({
+      error: {
+        message: "An error occurred with your deployment FUNCTION_INVOCATION_TIMEOUT sin1::7s8kv-178477620599",
+      },
+    }), { status: 504 });
+
+    const result = await parseUpstreamError(response, { provider: "nvidia" });
+
+    expect(result.disposition).toMatchObject({
+      failureClass: "transient_endpoint",
+      scope: "endpoint",
+      retryMode: "same_target_once",
+      cooldownMs: 5_000,
+    });
+    expect(result.message).toBe("NVIDIA function invocation timed out");
+  });
+
+  it("marks a Gemini thought-signature failure as a terminal continuity error", async () => {
+    const response = new Response(JSON.stringify({
+      error: {
+        message: "Function call is missing a thought_signature in functionCall parts.",
+      },
+    }), { status: 400 });
+
+    const result = await parseUpstreamError(response, { provider: "gemini" });
+
+    expect(result.disposition).toMatchObject({
+      failureClass: "protocol_continuity",
+      retryMode: "terminal",
+    });
+  });
 });

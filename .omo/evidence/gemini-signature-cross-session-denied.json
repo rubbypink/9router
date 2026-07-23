@@ -1,0 +1,7 @@
+{
+  "scenario": "gemini-signature-cross-session-denied",
+  "resultCode": "passed",
+  "cleanup": {
+    "temporaryDatabaseRemoved": true
+  }
+}

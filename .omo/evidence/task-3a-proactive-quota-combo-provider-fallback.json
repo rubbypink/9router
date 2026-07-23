@@ -1,0 +1,10 @@
+{
+  "scenario": "combo-skips-exhausted-provider",
+  "attempts": [
+    "/provider-b/model-b"
+  ],
+  "resultCode": 200,
+  "cleanup": {
+    "serverClosed": true
+  }
+}

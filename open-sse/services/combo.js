@@ -7,6 +7,7 @@ import { ACCOUNT_EXHAUSTED_ERROR_CODE } from "../config/errorConfig.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
+import { UPSTREAM_ATTEMPT_BUDGET_ERROR_CODE } from "./requestExecutionState.js";
 
 // Hard capabilities = input modalities; missing one drops request data (e.g. image
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
@@ -228,7 +229,7 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @returns {Promise<Response>}
  */
 export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true, preferredModel = null, getModelAvailability = null, onModelSelected = null, onEligibleFallback = null }) {
-  const hasPreferredModel = comboStrategy !== "round-robin" && preferredModel && models.includes(preferredModel);
+  const hasPreferredModel = preferredModel && models.includes(preferredModel);
   let rotatedModels = hasPreferredModel
     ? [preferredModel, ...models.filter((model) => model !== preferredModel)]
     : getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
@@ -248,6 +249,8 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   let lastError = null;
   let earliestRetryAfter = null;
   let lastStatus = null;
+  let sawCompatibleGeminiContinuationCandidate = false;
+  let sawIncompatibleGeminiContinuationCandidate = false;
 
   for (let i = 0; i < rotatedModels.length; i++) {
     const modelStr = rotatedModels[i];
@@ -256,7 +259,13 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
     if (getModelAvailability) {
       try {
         const availability = await getModelAvailability(modelStr);
+        if (availability?.continuationCompatible) sawCompatibleGeminiContinuationCandidate = true;
         if (availability?.available === false) {
+          if (availability.terminalRoutingCode === "gemini_thought_signature_missing") {
+            sawIncompatibleGeminiContinuationCandidate = true;
+            log.info("COMBO", `Skipping ${modelStr}: signed Gemini tool continuation is incompatible`);
+            continue;
+          }
           const retryAfter = availability.retryAfter || null;
           if (retryAfter && (!earliestRetryAfter || new Date(retryAfter) < new Date(earliestRetryAfter))) {
             earliestRetryAfter = retryAfter;
@@ -297,7 +306,6 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       } catch {
         // Ignore JSON parse errors
       }
-
       // Track earliest retryAfter across all combo models
       if (retryAfter && (!earliestRetryAfter || new Date(retryAfter) < new Date(earliestRetryAfter))) {
         earliestRetryAfter = retryAfter;
@@ -308,11 +316,15 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         try { errorText = JSON.stringify(errorText); } catch { errorText = String(errorText); }
       }
 
+      if (errorCode === UPSTREAM_ATTEMPT_BUDGET_ERROR_CODE || errorCode === "gemini_thought_signature_missing") {
+        log.warn("COMBO", `Model ${modelStr} failed with terminal routing code`, { code: errorCode });
+        return result;
+      }
+
       // Check if should fallback to next model
       const { shouldFallback, cooldownMs } = errorCode === ACCOUNT_EXHAUSTED_ERROR_CODE
         ? { shouldFallback: true, cooldownMs: 0 }
         : checkFallbackError(result.status, errorText);
-
       if (!shouldFallback) {
         log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
         return result;
@@ -338,6 +350,13 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       if (!lastStatus) lastStatus = 500;
       log.warn("COMBO", `Model ${modelStr} threw an unclassified error`, { error: lastError });
     }
+  }
+
+  if (sawIncompatibleGeminiContinuationCandidate && !sawCompatibleGeminiContinuationCandidate) {
+    return new Response(
+      JSON.stringify({ error: { message: "Gemini thought signature is required for this tool continuation", code: "gemini_thought_signature_missing" } }),
+      { status: 400, headers: { "Content-Type": "application/json" } },
+    );
   }
 
   // All models failed

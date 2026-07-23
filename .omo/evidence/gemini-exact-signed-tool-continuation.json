@@ -1,0 +1,7 @@
+{
+  "scenario": "gemini-exact-signed-tool-continuation",
+  "resultCode": "passed",
+  "cleanup": {
+    "temporaryDatabaseRemoved": true
+  }
+}

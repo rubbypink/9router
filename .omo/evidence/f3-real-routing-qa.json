@@ -1,0 +1,52 @@
+{
+  "scenario": "full-routing-matrix",
+  "attempts": [
+    "/nvidia",
+    "/fallback"
+  ],
+  "resultCode": "routing_matrix_passed",
+  "matrix": [
+    {
+      "scenario": "known_quota_skip",
+      "attempts": [
+        "/provider-b/model-b"
+      ],
+      "resultCode": 200
+    },
+    {
+      "scenario": "all_accounts_unavailable",
+      "attempts": [],
+      "resultCode": "all_accounts_unavailable"
+    },
+    {
+      "scenario": "dispatch_budget",
+      "attempts": [
+        "/budget",
+        "/budget",
+        "/budget",
+        "/budget"
+      ],
+      "resultCode": "upstream_attempt_budget_exhausted"
+    },
+    {
+      "scenario": "nvidia_retry_then_fallback",
+      "attempts": [
+        "/nvidia",
+        "/nvidia",
+        "/fallback"
+      ],
+      "resultCode": "same_target_retry_then_fallback"
+    },
+    {
+      "scenario": "nvidia_after_output",
+      "attempts": [
+        "/nvidia",
+        "/fallback"
+      ],
+      "resultCode": "no_retry_after_output"
+    }
+  ],
+  "cleanup": {
+    "serverClosed": true
+  }
+}

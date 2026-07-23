@@ -1,3 +1,5 @@
+import { redactThoughtSignatureText, redactThoughtSignatures } from "../translator/concerns/opaqueContinuity.js";
+
 // Check if running in Node.js environment (has fs module)
 const isNode = typeof process !== "undefined" && process.versions?.node && typeof window === "undefined";
 
@@ -86,7 +88,10 @@ export function maskSensitiveHeaders(headers) {
 }
 
 export function safeLogPayload(value) {
-  if (LOG_BODY_ENABLED || value == null) return value;
+  if (LOG_BODY_ENABLED || value == null) {
+    if (typeof value === "string") return redactThoughtSignatureText(value);
+    return redactThoughtSignatures(value);
+  }
   if (typeof value === "string") {
     return { redacted: true, type: "string", length: value.length };
   }
@@ -194,7 +199,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
       if (!fs || !sessionPath) return;
       try {
         const filePath = path.join(sessionPath, "5_res_provider.txt");
-        fs.appendFileSync(filePath, chunk);
+        fs.appendFileSync(filePath, redactThoughtSignatureText(chunk));
       } catch (err) {
         // Ignore append errors
       }
@@ -206,7 +211,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
       if (!fs || !sessionPath) return;
       try {
         const filePath = path.join(sessionPath, "6_res_openai.txt");
-        fs.appendFileSync(filePath, chunk);
+        fs.appendFileSync(filePath, redactThoughtSignatureText(chunk));
       } catch (err) {
         // Ignore append errors
       }
@@ -226,7 +231,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
       if (!fs || !sessionPath) return;
       try {
         const filePath = path.join(sessionPath, "7_res_client.txt");
-        fs.appendFileSync(filePath, chunk);
+        fs.appendFileSync(filePath, redactThoughtSignatureText(chunk));
       } catch (err) {
         // Ignore append errors
       }
@@ -236,8 +241,8 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
     logError(error, requestBody = null) {
       writeJsonFile(sessionPath, "6_error.json", {
         timestamp: new Date().toISOString(),
-        error: error?.message || String(error),
-        stack: error?.stack,
+        error: redactThoughtSignatureText(error?.message || String(error)),
+        stack: redactThoughtSignatureText(error?.stack),
         requestBody: safeLogPayload(requestBody)
       });
     }
@@ -264,9 +269,11 @@ export function logError(provider, { error, url, model, requestBody }) {
       provider,
       model,
       url,
-      error: error?.message || String(error),
-      stack: error?.stack,
-      requestBody
+      error: redactThoughtSignatureText(error?.message || String(error)),
+      stack: redactThoughtSignatureText(error?.stack),
+      requestBody: typeof requestBody === "string"
+        ? redactThoughtSignatureText(requestBody)
+        : redactThoughtSignatures(requestBody)
     };
     
     fs.appendFileSync(logPath, JSON.stringify(logEntry) + "\n");

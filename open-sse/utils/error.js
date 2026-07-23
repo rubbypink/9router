@@ -1,5 +1,7 @@
 import { ERROR_TYPES, DEFAULT_ERROR_MESSAGES } from "../config/errorConfig.js";
 import { resolveQuotaPolicy } from "../config/quotaPolicy.js";
+import { classifyUpstreamFailure } from "../services/upstreamFailurePolicy.js";
+import { redactThoughtSignatureText } from "../translator/concerns/opaqueContinuity.js";
 
 function positiveFinite(value) {
   return Number.isFinite(value) && value > 0 ? value : null;
@@ -173,7 +175,7 @@ export function buildErrorBody(statusCode, message) {
 
   return {
     error: {
-      message: message || DEFAULT_ERROR_MESSAGES[statusCode] || "An error occurred",
+      message: redactThoughtSignatureText(message || DEFAULT_ERROR_MESSAGES[statusCode] || "An error occurred"),
       type: errorInfo.type,
       code: errorInfo.code
     }
@@ -235,12 +237,23 @@ export async function parseUpstreamError(response, executor = null) {
     try {
       const parsed = executor.parseError(response, bodyText);
       if (parsed && typeof parsed === "object") {
-        const msg = parsed.message || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
+        const msg = redactThoughtSignatureText(parsed.message || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`);
+        const statusCode = parsed.status || response.status;
+        const errorCode = getErrorCode(parsed.errorCode) || getErrorCode(parsed.code);
+        const resetsAtMs = resolveResetAtMs(response, parsed, parsedJson, provider);
+        const disposition = classifyUpstreamFailure({
+          provider,
+          status: statusCode,
+          error: msg,
+          errorCode,
+          resetsAtMs,
+        });
         return {
-          statusCode: parsed.status || response.status,
-          message: msg,
-          resetsAtMs: resolveResetAtMs(response, parsed, parsedJson, provider),
-          errorCode: getErrorCode(parsed.errorCode) || getErrorCode(parsed.code),
+          statusCode,
+          message: disposition.safeMessage || msg,
+          resetsAtMs,
+          errorCode,
+          disposition,
         };
       }
     } catch {}
@@ -260,13 +273,23 @@ export async function parseUpstreamError(response, executor = null) {
   }
 
   const messageStr = typeof message === "string" ? message : JSON.stringify(message);
-  const finalMessage = messageStr || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
+  const finalMessage = redactThoughtSignatureText(messageStr || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`);
+  const errorCode = getErrorCode(parsedJson?.error?.code) || getErrorCode(parsedJson?.error?.status) || getErrorCode(parsedJson?.code);
+  const resetsAtMs = resolveResetAtMs(response, null, parsedJson, provider);
+  const disposition = classifyUpstreamFailure({
+    provider,
+    status: response.status,
+    error: finalMessage,
+    errorCode,
+    resetsAtMs,
+  });
 
   return {
     statusCode: response.status,
-    message: finalMessage,
-    resetsAtMs: resolveResetAtMs(response, null, parsedJson, provider),
-    errorCode: getErrorCode(parsedJson?.error?.code) || getErrorCode(parsedJson?.error?.status) || getErrorCode(parsedJson?.code),
+    message: disposition.safeMessage || finalMessage,
+    resetsAtMs,
+    errorCode,
+    disposition,
   };
 }
 
@@ -279,33 +302,37 @@ export async function parseUpstreamError(response, executor = null) {
  * @returns {{ success: false, status: number, error: string, response: Response, resetsAtMs?: number, errorCode?: string|null }}
  */
 export function createErrorResult(statusCode, message, resetsAtMs, failure = {}) {
+  const safeMessage = redactThoughtSignatureText(message);
   return {
     success: false,
     status: statusCode,
-    error: message,
+    error: safeMessage,
     resetsAtMs,
     errorCode: failure.errorCode || null,
-    response: errorResponse(statusCode, message)
+    disposition: failure.disposition || null,
+    response: errorResponse(statusCode, safeMessage)
   };
 }
 
 export function createTypedErrorResult(statusCode, message, code, details = {}) {
+  const safeMessage = redactThoughtSignatureText(message);
   return {
     success: false,
     status: statusCode,
-    error: message,
-    response: errorResponse(statusCode, message, code, details)
+    error: safeMessage,
+    response: errorResponse(statusCode, safeMessage, code, details)
   };
 }
 
 export function createRoutingErrorResult(statusCode, message, code, details = {}) {
+  const safeMessage = redactThoughtSignatureText(message);
   return {
     success: false,
     status: statusCode,
-    error: message,
+    error: safeMessage,
     errorCode: code,
     routingFailure: true,
-    response: errorResponse(statusCode, message, code, details),
+    response: errorResponse(statusCode, safeMessage, code, details),
   };
 }
 
@@ -320,7 +347,7 @@ export function createRoutingErrorResult(statusCode, message, code, details = {}
  */
 export function unavailableResponse(statusCode, message, retryAfter, retryAfterHuman, errorCode = null) {
   const retryAfterSec = Math.max(Math.ceil((new Date(retryAfter).getTime() - Date.now()) / 1000), 1);
-  const msg = `${message} (${retryAfterHuman})`;
+  const msg = redactThoughtSignatureText(`${message} (${retryAfterHuman})`);
   const error = { message: msg };
   if (errorCode) error.code = errorCode;
   return new Response(
@@ -345,10 +372,12 @@ export function unavailableResponse(statusCode, message, retryAfter, retryAfterH
  */
 export function formatProviderError(error, provider, model, statusCode) {
   const code = statusCode || error.code || "FETCH_FAILED";
-  const message = error.message || "Unknown error";
+  const message = redactThoughtSignatureText(error.message || "Unknown error");
   // Expose low-level cause (e.g. UND_ERR_SOCKET, ECONNRESET, ETIMEDOUT) for diagnosing fetch failures
   const causeCode = error.cause?.code;
   const causeMsg = error.cause?.message;
-  const causeStr = causeCode || causeMsg ? ` (cause: ${[causeCode, causeMsg].filter(Boolean).join(": ")})` : "";
+  const causeStr = causeCode || causeMsg
+    ? ` (cause: ${redactThoughtSignatureText([causeCode, causeMsg].filter(Boolean).join(": "))})`
+    : "";
   return `[${code}]: ${message}${causeStr}`;
 }

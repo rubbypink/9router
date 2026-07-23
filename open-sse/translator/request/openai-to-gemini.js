@@ -18,6 +18,7 @@ import {
 } from "../formats/gemini.js";
 import { deriveSessionId, toNumericSessionId } from "../../utils/sessionManager.js";
 import { ROLE, GEMINI_ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
+import { requireGeminiThoughtSignature } from "../../services/geminiThoughtSignatures.js";
 
 // Sanitize function names for Gemini API.
 // Gemini requires: starts with [a-zA-Z_], followed by [a-zA-Z0-9_.:\-], max 64 chars.
@@ -46,7 +47,11 @@ function normalizeGeminiContents(contents) {
 }
 
 // Core: Convert OpenAI request to Gemini format (base for all variants)
-function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG_SIGNATURE) {
+function openaiToGeminiBase(model, body, stream, {
+  defaultSignature = null,
+  continuationContext = null,
+  requireContinuitySignature = false,
+} = {}) {
   const result = {
     model: model,
     contents: [],
@@ -118,10 +123,12 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
             thought: true,
             text: msg.reasoning_content
           });
-          parts.push({
-            thoughtSignature: signature,
-            text: ""
-          });
+          if (defaultSignature) {
+            parts.push({
+              thoughtSignature: defaultSignature,
+              text: ""
+            });
+          }
         }
 
         if (content) {
@@ -137,14 +144,22 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
             if (tc.type !== OPENAI_BLOCK.FUNCTION) continue;
 
             const args = tryParseJSON(tc.function?.arguments || "{}");
-            parts.push({
-              thoughtSignature: signature,
+            const thoughtSignature = defaultSignature || (requireContinuitySignature
+              ? requireGeminiThoughtSignature(continuationContext, {
+                toolCallId: tc.id,
+                functionName: tc.function?.name,
+                arguments: args,
+              })
+              : null);
+            const functionPart = {
               functionCall: {
                 id: tc.id,
                 name: sanitizeGeminiFunctionName(tc.function.name),
                 args: args
               }
-            });
+            };
+            if (thoughtSignature) functionPart.thoughtSignature = thoughtSignature;
+            parts.push(functionPart);
             toolCallIds.push(tc.id);
           }
 
@@ -232,13 +247,18 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
 }
 
 // OpenAI -> Gemini (standard API)
-export function openaiToGeminiRequest(model, body, stream) {
-  return openaiToGeminiBase(model, body, stream);
+export function openaiToGeminiRequest(model, body, stream, credentials = null) {
+  return openaiToGeminiBase(model, body, stream, {
+    continuationContext: credentials?._geminiContinuationContext || null,
+    requireContinuitySignature: true,
+  });
 }
 
 // OpenAI -> Gemini CLI (Cloud Code Assist)
 export function openaiToGeminiCLIRequest(model, body, stream) {
-  const gemini = openaiToGeminiBase(model, body, stream, DEFAULT_THINKING_GEMINI_CLI_SIGNATURE);
+  const gemini = openaiToGeminiBase(model, body, stream, {
+    defaultSignature: DEFAULT_THINKING_GEMINI_CLI_SIGNATURE,
+  });
   // Thinking is normalized centrally by applyThinking (thinkingUnified.js) after translation.
 
   // Clean schema for tools

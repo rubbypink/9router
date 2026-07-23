@@ -1,0 +1,8 @@
+{
+  "scenario": "provider-all-accounts-unavailable",
+  "attempts": [],
+  "resultCode": "all_accounts_unavailable",
+  "cleanup": {
+    "serverClosed": true
+  }
+}

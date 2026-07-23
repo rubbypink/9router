@@ -1,0 +1,13 @@
+{
+  "scenario": "dispatch-budget-four",
+  "attempts": [
+    "/budget",
+    "/budget",
+    "/budget",
+    "/budget"
+  ],
+  "resultCode": "upstream_attempt_budget_exhausted",
+  "cleanup": {
+    "serverClosed": true
+  }
+}

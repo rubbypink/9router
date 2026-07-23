@@ -12,6 +12,8 @@
 - Fusion combos remain rejected for an affinity-bound request because fusion intentionally fans out to multiple models.
 - A provider reset timestamp is authoritative when supplied. Otherwise the provider-specific fallback applies, then bounded exponential backoff from 2 seconds to 5 minutes.
 - Account/model failure state is persisted in the existing SQLite connection record. Expired locks are reconciled at startup and again during account selection, so accounts become eligible automatically without a process restart or user action.
+- Combo planning preserves configured fallback priority or the new-session round-robin cursor, then skips candidates whose provider/model state has evidence of an active lock. The selected account is checked again immediately before executor dispatch; a newly unavailable account is reselected without opening an endpoint or consuming the four-attempt budget.
+- Persisted availability is evidence-scoped: explicit provider-wide evidence blocks every active account of that provider; account-wide evidence blocks that account; otherwise the lock is model-scoped. Ambiguous failures fail open and never become quota state. There is no generic combo freshness cache and no inferred provider reset calendar.
 
 The implementation lives in `open-sse/config/quotaPolicy.js`. `PROVIDER_QUOTA_POLICIES` is generated from the live provider registry, so every registered provider receives a policy and new registry entries fall back safely to the generic policy.
 
@@ -46,6 +48,12 @@ The policy consumes only reset signals documented by a provider or already retur
 The remaining 57 registry providers currently use the generic policy: `alicode-intl`, `alicode`, `assemblyai`, `aws-polly`, `black-forest-labs`, `blackbox`, `brave-search`, `byteplus`, `cartesia`, `chutes`, `cline`, `clinepass`, `codebuddy-cn`, `commandcode`, `cursor`, `deepgram`, `exa`, `fal-ai`, `featherless`, `firecrawl`, `gitlab`, `glm-cn`, `hyperbolic`, `iflow`, `inworld`, `jina-ai`, `jina-reader`, `kilocode`, `kimchi`, `kiro`, `linkup`, `mimo-free`, `mmf`, `nanobanana`, `nebius`, `nvidia`, `ollama`, `opencode-go`, `opencode`, `playht`, `qoder`, `qwen`, `recraft`, `runwayml`, `searchapi`, `searxng`, `serper`, `siliconflow`, `tavily`, `topaz`, `venice`, `vercel-ai-gateway`, `volcengine-ark`, `voyage-ai`, `xiaomi-mimo`, `xiaomi-tokenplan`, and `youcom`.
 
 For those providers, 9Router honors standard `Retry-After`, `X-RateLimit-Reset-After`, `X-RateLimit-Reset`, and common reset fields in the error body. If none are present, it records a bounded fallback cooldown instead of guessing a billing or quota reset schedule.
+
+## NVIDIA and Gemini continuity failures
+
+- NVIDIA is retried on the same selected account exactly once only for HTTP `504` responses that explicitly identify `FUNCTION_INVOCATION_TIMEOUT`, and only before output begins. A repeated match creates a short transient endpoint/model cooldown and follows ordinary account then combo fallback. It is never recorded as quota, and opaque provider correlation data is not retained in routing logs.
+- Native Gemini tool continuity stores an opaque `thoughtSignature` locally for 30 days, keyed by a hash of the stable client session plus API family, compatible model, emitted tool-call ID, function name, and canonical arguments fingerprint. The token is replayed verbatim only for that exact continuation; it is not exported or logged. On expiry, the token is deleted and only a bounded hash-only tombstone remains long enough to reject unsafe fallback for that old continuation.
+- A missing, mismatched, expired, or incompatible Gemini signature is a terminal `gemini_thought_signature_missing` routing error. It does not mutate account health or fall through to another provider. While one is pending, combo preflight permits only a compatible native Gemini candidate.
 
 ## Operational visibility
 

@@ -47,6 +47,14 @@ export {
   getLegacySessionRouteBinding, migrateLegacySessionRouteBinding,
 } from "./repos/threadRoutesRepo.js";
 
+export {
+  upsertGeminiThoughtSignature,
+  getGeminiThoughtSignature,
+  listGeminiThoughtSignatureBindings,
+  listGeminiThoughtSignatureTombstones,
+  cleanupExpiredGeminiThoughtSignatures,
+} from "./repos/geminiThoughtSignaturesRepo.js";
+
 // Aliases (model + custom + mitm)
 export {
   getModelAliases, setModelAlias, deleteModelAlias,
@@ -124,6 +132,8 @@ export async function importDb(payload) {
     db.run(`DELETE FROM sessionModelBindings`);
     db.run(`DELETE FROM sessionConnectionBindings`);
     db.run(`DELETE FROM providerRoundRobinCursors`);
+    db.run(`DELETE FROM geminiThoughtSignatures`);
+    db.run(`DELETE FROM geminiThoughtSignatureTombstones`);
     db.run(`DELETE FROM kv WHERE scope IN ('modelAliases', 'customModels', 'mitmAlias', 'pricing')`);
 
     // Settings

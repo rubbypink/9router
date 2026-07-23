@@ -3,7 +3,7 @@
 // pre-change safety backup in migrate.js: when the stored version is lower,
 // one lightweight DB backup is taken before applying schema changes. Forgetting
 // to bump only skips that backup — it does NOT break the additive auto-sync.
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -154,6 +154,42 @@ export const TABLES = {
       position: "INTEGER NOT NULL DEFAULT 0",
       updatedAt: "INTEGER NOT NULL",
     },
+  },
+  geminiThoughtSignatures: {
+    columns: {
+      sessionKeyHash: "TEXT NOT NULL",
+      apiFamily: "TEXT NOT NULL",
+      modelFamily: "TEXT NOT NULL",
+      toolCallId: "TEXT NOT NULL",
+      functionName: "TEXT NOT NULL",
+      argumentsFingerprint: "TEXT NOT NULL",
+      thoughtSignature: "TEXT NOT NULL",
+      observedAt: "INTEGER NOT NULL",
+      lastUsedAt: "INTEGER NOT NULL",
+      expiresAt: "INTEGER NOT NULL",
+    },
+    primaryKey: "PRIMARY KEY (sessionKeyHash, apiFamily, modelFamily, toolCallId, functionName, argumentsFingerprint)",
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_gts_expiry ON geminiThoughtSignatures(expiresAt)",
+      "CREATE INDEX IF NOT EXISTS idx_gts_session ON geminiThoughtSignatures(sessionKeyHash, expiresAt)",
+    ],
+  },
+  geminiThoughtSignatureTombstones: {
+    columns: {
+      sessionKeyHash: "TEXT NOT NULL",
+      apiFamily: "TEXT NOT NULL",
+      modelFamily: "TEXT NOT NULL",
+      toolCallId: "TEXT NOT NULL",
+      functionName: "TEXT NOT NULL",
+      argumentsFingerprint: "TEXT NOT NULL",
+      observedAt: "INTEGER NOT NULL",
+      expiresAt: "INTEGER NOT NULL",
+    },
+    primaryKey: "PRIMARY KEY (sessionKeyHash, apiFamily, modelFamily, toolCallId, functionName, argumentsFingerprint)",
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_gtst_expiry ON geminiThoughtSignatureTombstones(expiresAt)",
+      "CREATE INDEX IF NOT EXISTS idx_gtst_session ON geminiThoughtSignatureTombstones(sessionKeyHash, expiresAt)",
+    ],
   },
   kv: {
     columns: {

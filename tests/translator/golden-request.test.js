@@ -50,9 +50,16 @@ describe("GOLDEN request: OpenAI → Claude", () => {
 });
 
 describe("GOLDEN request: OpenAI → Gemini", () => {
-  it("full body (system/image/tool/tool_result)", () => {
-    const out = translateRequest(FORMATS.OPENAI, FORMATS.GEMINI, "gemini-3-pro", baseBody(), true, { apiKey: "k" }, "gemini");
-    expect(clean(out)).toMatchSnapshot();
+  it("rejects an unbound tool continuation instead of injecting a static signature", () => {
+    expect(() => translateRequest(
+      FORMATS.OPENAI,
+      FORMATS.GEMINI,
+      "gemini-3-pro",
+      baseBody(),
+      true,
+      { apiKey: "k" },
+      "gemini",
+    )).toThrow(expect.objectContaining({ code: "gemini_thought_signature_missing" }));
   });
 
   it("Gemini CLI tool requests include validated toolConfig and enough output for high thinking", () => {

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   createUpstreamRequestState: vi.fn(() => ({})),
   extractApiKey: vi.fn(() => null),
   getComboModels: vi.fn(),
+  getProviderConnectionAvailability: vi.fn(),
   getModelInfo: vi.fn(),
   getProviderModelAvailability: vi.fn(),
   getProviderCredentials: vi.fn(),
@@ -28,6 +29,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("open-sse/index.js", () => ({}));
 vi.mock("../../src/sse/services/auth.js", () => ({
   getProviderCredentials: mocks.getProviderCredentials,
+  getProviderConnectionAvailability: mocks.getProviderConnectionAvailability,
   getProviderModelAvailability: mocks.getProviderModelAvailability,
   markAccountUnavailable: mocks.markAccountUnavailable,
   clearAccountError: mocks.clearAccountError,
@@ -83,6 +85,8 @@ vi.mock("open-sse/services/threadRouteCoordinator.js", () => ({
 vi.mock("open-sse/services/requestExecutionState.js", () => ({
   createUpstreamRequestState: mocks.createUpstreamRequestState,
   runWithUpstreamRequestState: mocks.runWithUpstreamRequestState,
+  UPSTREAM_DISPATCH_INELIGIBLE_ERROR_CODE: "upstream_dispatch_ineligible",
+  UPSTREAM_ATTEMPT_BUDGET_ERROR_CODE: "upstream_attempt_budget_exhausted",
 }));
 
 import { handleChat } from "../../src/sse/handlers/chat.js";
@@ -115,6 +119,7 @@ describe("session affinity chat fallback", () => {
       })
       .mockResolvedValue(null);
     mocks.getProviderModelAvailability.mockResolvedValue({ available: true });
+    mocks.getProviderConnectionAvailability.mockResolvedValue({ available: true });
     mocks.checkAndRefreshToken.mockImplementation(async (_provider, credentials) => credentials);
     mocks.handleChatCore.mockResolvedValue({
       success: false,
@@ -329,5 +334,112 @@ describe("session affinity chat fallback", () => {
       { preferredConnectionId: null, sessionKey: null },
     );
     expect(mocks.handleChatCore).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries only the same NVIDIA account once before moving to account fallback", async () => {
+    mocks.isCodexThreadAffinityEnabled.mockReturnValue(false);
+    mocks.handleChatCore
+      .mockReset()
+      .mockResolvedValueOnce({
+        success: false,
+        status: 504,
+        error: "[504]: NVIDIA function invocation timed out",
+        disposition: { retryMode: "same_target_once", cooldownMs: 5_000 },
+        response: new Response("timeout", { status: 504 }),
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        response: new Response("nvidia retry ok"),
+      });
+    const request = new Request("http://router.test/v1/chat/completions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model: "openai/gpt-test", messages: [] }),
+    });
+
+    const response = await handleChat(request);
+
+    expect(response.status).toBe(200);
+    await expect(response.text()).resolves.toBe("nvidia retry ok");
+    expect(mocks.getProviderCredentials).toHaveBeenCalledTimes(1);
+    expect(mocks.handleChatCore).toHaveBeenCalledTimes(2);
+    expect(mocks.markAccountUnavailable).not.toHaveBeenCalled();
+  });
+
+  it("reselects an account that became unavailable before its endpoint dispatch", async () => {
+    mocks.isCodexThreadAffinityEnabled.mockReturnValue(false);
+    mocks.getProviderCredentials
+      .mockReset()
+      .mockResolvedValueOnce({
+        connectionId: "connection-stale",
+        connectionName: "stale-account",
+        accessToken: "test-token",
+        providerSpecificData: {},
+      })
+      .mockResolvedValueOnce({
+        connectionId: "connection-fresh",
+        connectionName: "fresh-account",
+        accessToken: "fresh-token",
+        providerSpecificData: {},
+      });
+    mocks.getProviderConnectionAvailability
+      .mockResolvedValueOnce({ available: false, reason: "quota" })
+      .mockResolvedValueOnce({ available: true });
+    mocks.handleChatCore
+      .mockReset()
+      .mockImplementationOnce(async ({ onBeforeUpstreamDispatch }) => {
+        try {
+          await onBeforeUpstreamDispatch();
+        } catch (error) {
+          return {
+            success: false,
+            status: 503,
+            error: error.message,
+            errorCode: error.code,
+            response: new Response(error.message, { status: 503 }),
+          };
+        }
+        throw new Error("expected final account recheck to reject the stale account");
+      })
+      .mockImplementationOnce(async ({ onBeforeUpstreamDispatch }) => {
+        await onBeforeUpstreamDispatch();
+        return { success: true, response: new Response("fresh account ok") };
+      });
+    const request = new Request("http://router.test/v1/chat/completions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model: "openai/gpt-test", messages: [] }),
+    });
+
+    const response = await handleChat(request);
+
+    expect(response.status).toBe(200);
+    await expect(response.text()).resolves.toBe("fresh account ok");
+    expect(mocks.getProviderCredentials).toHaveBeenCalledTimes(2);
+    expect(mocks.getProviderConnectionAvailability).toHaveBeenCalledWith("openai", "connection-stale", "gpt-test");
+    expect(mocks.getProviderConnectionAvailability).toHaveBeenCalledWith("openai", "connection-fresh", "gpt-test");
+    expect(mocks.markAccountUnavailable).not.toHaveBeenCalled();
+  });
+
+  it("returns a Gemini continuity routing failure without poisoning account fallback", async () => {
+    mocks.isCodexThreadAffinityEnabled.mockReturnValue(false);
+    mocks.getModelInfo.mockResolvedValue({ provider: "gemini", model: "gemini-2.5-pro" });
+    mocks.handleChatCore.mockResolvedValue({
+      success: false,
+      routingFailure: true,
+      status: 400,
+      errorCode: "gemini_thought_signature_missing",
+      response: new Response("signature required", { status: 400 }),
+    });
+    const request = new Request("http://router.test/v1/chat/completions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model: "gemini/gemini-2.5-pro", messages: [] }),
+    });
+
+    const response = await handleChat(request);
+
+    expect(response.status).toBe(400);
+    expect(mocks.markAccountUnavailable).not.toHaveBeenCalled();
   });
 });

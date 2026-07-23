@@ -61,7 +61,7 @@ describe("combo round-robin routing", () => {
     expect(getRotatedModels(models, "code-xhigh", "fallback", 2)).toEqual(models);
   });
 
-  it("applies combo round-robin before a thread-pinned model", async () => {
+  it("keeps a thread-pinned model ahead of combo round-robin", async () => {
     const calls = [];
     const response = await handleComboChat({
       body: { messages: [{ role: "user", content: "hello" }] },
@@ -77,7 +77,7 @@ describe("combo round-robin routing", () => {
     });
 
     expect(response.ok).toBe(true);
-    expect(calls).toEqual(["provider/model-a"]);
+    expect(calls).toEqual(["provider/model-b"]);
   });
 
   it("falls away from a pinned fallback model only for an eligible provider failure", async () => {
@@ -282,7 +282,7 @@ describe("combo round-robin routing", () => {
     expect(calls).toEqual(["provider/model-b", "provider/model-a"]);
   });
 
-  it("does not let a legacy attempt-budget response block another configured model", async () => {
+  it("stops combo fallback when the logical request reaches its upstream dispatch budget", async () => {
     const calls = [];
     const response = await handleComboChat({
       body: { messages: [{ role: "user", content: "hello" }] },
@@ -295,7 +295,7 @@ describe("combo round-robin routing", () => {
               message: "Upstream attempt budget exhausted (4/4)",
               code: "upstream_attempt_budget_exhausted",
             },
-          }), { status: 404, headers: { "content-type": "application/json" } });
+          }), { status: 503, headers: { "content-type": "application/json" } });
         }
         return new Response("configured fallback");
       },
@@ -304,8 +304,85 @@ describe("combo round-robin routing", () => {
       comboStrategy: "fallback",
     });
 
+    expect(response.status).toBe(503);
+    expect(calls).toEqual(["provider/model-a"]);
+  });
+
+  it("does not switch a signed Gemini tool continuation to another combo model", async () => {
+    const calls = [];
+    const response = await handleComboChat({
+      body: { messages: [{ role: "user", content: "continue tool" }] },
+      models: ["gemini/gemini-2.5-pro", "openai/gpt-5.6"],
+      handleSingleModel: async (_body, model) => {
+        calls.push(model);
+        return new Response(JSON.stringify({
+          error: {
+            message: "Gemini thought signature is required for this tool continuation",
+            code: "gemini_thought_signature_missing",
+          },
+        }), { status: 400, headers: { "content-type": "application/json" } });
+      },
+      log: { info() {}, warn() {} },
+      comboName: "gemini-tools",
+      comboStrategy: "fallback",
+    });
+
+    expect(response.status).toBe(400);
+    expect(calls).toEqual(["gemini/gemini-2.5-pro"]);
+  });
+
+  it("preflights incompatible signed Gemini continuation candidates without dispatching them", async () => {
+    const calls = [];
+    const response = await handleComboChat({
+      body: { messages: [{ role: "user", content: "continue tool" }] },
+      models: ["openai/gpt-5.6", "anthropic/claude-sonnet"],
+      handleSingleModel: async (_body, model) => {
+        calls.push(model);
+        return new Response("must not dispatch");
+      },
+      getModelAvailability: async () => ({
+        available: false,
+        reason: "gemini_signed_tool_incompatible",
+        terminalRoutingCode: "gemini_thought_signature_missing",
+      }),
+      log: { info() {}, warn() {} },
+      comboName: "gemini-tools",
+      comboStrategy: "fallback",
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "gemini_thought_signature_missing" },
+    });
+    expect(calls).toEqual([]);
+  });
+
+  it("skips incompatible signed continuation candidates and dispatches the compatible Gemini target", async () => {
+    const calls = [];
+    const response = await handleComboChat({
+      body: { messages: [{ role: "user", content: "continue tool" }] },
+      models: ["openai/gpt-5.6", "gemini/gemini-2.5-pro"],
+      handleSingleModel: async (_body, model) => {
+        calls.push(model);
+        return new Response("Gemini continuation resumed");
+      },
+      getModelAvailability: async (model) => (
+        model.startsWith("openai/")
+          ? {
+            available: false,
+            reason: "gemini_signed_tool_incompatible",
+            terminalRoutingCode: "gemini_thought_signature_missing",
+          }
+          : { available: true, continuationCompatible: true }
+      ),
+      log: { info() {}, warn() {} },
+      comboName: "gemini-tools",
+      comboStrategy: "fallback",
+    });
+
     expect(response.ok).toBe(true);
-    expect(calls).toEqual(["provider/model-a", "provider/model-b"]);
+    await expect(response.text()).resolves.toBe("Gemini continuation resumed");
+    expect(calls).toEqual(["gemini/gemini-2.5-pro"]);
   });
 
   it("keeps a thread-pinned combo route for opaque inter-agent content", async () => {

@@ -1,0 +1,11 @@
+{
+  "scenario": "nvidia-timeout-after-stream-start",
+  "attempts": [
+    "/nvidia",
+    "/fallback"
+  ],
+  "resultCode": "no_retry_after_output",
+  "cleanup": {
+    "serverClosed": true
+  }
+}
