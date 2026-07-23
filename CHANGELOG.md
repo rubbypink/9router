@@ -1,3 +1,8 @@
+# v0.5.40-9trip.12 (2026-07-23)
+
+## Fixes
+- **Codex catalog latency**: skip live provider discovery for `/v1/models?client_version=...` so Codex refreshes combo tool metadata within its five-second deadline
+
 # v0.5.40-9trip.11 (2026-07-23)
 
 ## Fixes
