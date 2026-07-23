@@ -523,14 +523,18 @@ export async function OPTIONS() {
   });
 }
 
+export function shouldSkipDynamicModelFetch(request) {
+  if (request?.headers?.get(INTERNAL_MODELS_FETCH_HEADER) === "1") return true;
+  return request?.url ? new URL(request.url).searchParams.has("client_version") : false;
+}
+
 /**
  * GET /v1/models - OpenAI compatible models list (LLM/chat models only by default).
  * For other capabilities use /v1/models/{kind} (image, tts, stt, embedding, image-to-text, web).
  */
 export async function GET(request) {
   try {
-    // Detect cross-instance recursive /models fetch (another 9router fetching our /models)
-    const skipDynamicFetch = request?.headers?.get(INTERNAL_MODELS_FETCH_HEADER) === "1";
+    const skipDynamicFetch = shouldSkipDynamicModelFetch(request);
     const [data, state, template] = await Promise.all([
       buildModelsList([LLM_KIND], { skipDynamicFetch }),
       getCodexModelCatalogState(),

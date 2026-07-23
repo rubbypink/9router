@@ -10,7 +10,7 @@ import {
 } from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 
-export const CODEX_MODEL_CATALOG_CONTRACT_VERSION = "9router-codex-model-catalog/v3";
+export const CODEX_MODEL_CATALOG_CONTRACT_VERSION = "9router-codex-model-catalog/v4";
 export const CODEX_MODEL_CATALOG_TEMPLATE_SLUG = "__9router_catalog_template";
 
 const LLM_KIND = "llm";
