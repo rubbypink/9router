@@ -315,13 +315,16 @@ export function createRoutingErrorResult(statusCode, message, code, details = {}
  * @param {string} message - Error message (without retry info)
  * @param {string} retryAfter - ISO timestamp when earliest account becomes available
  * @param {string} retryAfterHuman - Human-readable retry info e.g. "reset after 30s"
+ * @param {string|null} [errorCode] - Optional machine-readable unavailable reason
  * @returns {Response}
  */
-export function unavailableResponse(statusCode, message, retryAfter, retryAfterHuman) {
+export function unavailableResponse(statusCode, message, retryAfter, retryAfterHuman, errorCode = null) {
   const retryAfterSec = Math.max(Math.ceil((new Date(retryAfter).getTime() - Date.now()) / 1000), 1);
   const msg = `${message} (${retryAfterHuman})`;
+  const error = { message: msg };
+  if (errorCode) error.code = errorCode;
   return new Response(
-    JSON.stringify({ error: { message: msg } }),
+    JSON.stringify({ error }),
     {
       status: statusCode,
       headers: {

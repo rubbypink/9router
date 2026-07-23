@@ -45,10 +45,6 @@ vi.mock("open-sse/handlers/chatCore.js", () => ({ handleChatCore: mocks.handleCh
 vi.mock("@/lib/headroom/detect", () => ({ DEFAULT_HEADROOM_URL: "http://headroom.test" }));
 vi.mock("@/lib/pxpipe/loader.js", () => ({ getTransform: vi.fn() }));
 vi.mock("@/lib/pxpipe/events.js", () => ({ appendPxpipeEvent: vi.fn() }));
-vi.mock("open-sse/utils/error.js", () => ({
-  errorResponse: (status, message, code) => new Response(JSON.stringify({ message, code }), { status }),
-  unavailableResponse: (status, message) => new Response(JSON.stringify({ message }), { status }),
-}));
 vi.mock("open-sse/services/combo.js", async (importOriginal) => ({
   ...await importOriginal(),
   handleFusionChat: mocks.handleFusionChat,
@@ -268,5 +264,70 @@ describe("session affinity chat fallback", () => {
     expect(response.status).toBe(200);
     await expect(response.text()).resolves.toBe("fusion ok");
     expect(mocks.handleFusionChat).toHaveBeenCalledTimes(1);
+  });
+
+  it("continues a fallback combo when every account for its first model is exhausted", async () => {
+    // Given
+    mocks.isCodexThreadAffinityEnabled.mockReturnValue(false);
+    mocks.getComboModels.mockResolvedValue(["provider-a/model-a", "provider-b/model-b"]);
+    mocks.getModelInfo.mockImplementation(async (model) => {
+      const [provider, modelName] = model.split("/");
+      return { provider, model: modelName };
+    });
+    mocks.getProviderCredentials
+      .mockReset()
+      .mockResolvedValueOnce({
+        connectionId: "provider-a-account",
+        connectionName: "provider-a account",
+        accessToken: "test-token",
+        providerSpecificData: {},
+      })
+      .mockResolvedValueOnce({
+        allRateLimited: true,
+        retryAfter: new Date(Date.now() + 60_000).toISOString(),
+        retryAfterHuman: "reset after 1m",
+        lastError: "All accounts unavailable",
+        lastErrorCode: 400,
+      })
+      .mockResolvedValueOnce({
+        connectionId: "provider-b-account",
+        connectionName: "provider-b account",
+        accessToken: "test-token",
+        providerSpecificData: {},
+      });
+    mocks.handleChatCore
+      .mockReset()
+      .mockResolvedValueOnce({
+        success: false,
+        status: 400,
+        error: "All accounts unavailable",
+        response: new Response("provider-a accounts unavailable", { status: 400 }),
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        response: new Response("provider-b fallback ok"),
+      });
+    mocks.markAccountUnavailable.mockResolvedValue({ shouldFallback: true });
+    const request = new Request("http://router.test/v1/chat/completions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model: "quota-combo", messages: [] }),
+    });
+
+    // When
+    const response = await handleChat(request);
+
+    // Then
+    expect(response.status).toBe(200);
+    await expect(response.text()).resolves.toBe("provider-b fallback ok");
+    expect(mocks.getProviderCredentials).toHaveBeenCalledTimes(3);
+    expect(mocks.getProviderCredentials).toHaveBeenNthCalledWith(
+      3,
+      "provider-b",
+      expect.any(Set),
+      "model-b",
+      { preferredConnectionId: null, sessionKey: null },
+    );
+    expect(mocks.handleChatCore).toHaveBeenCalledTimes(2);
   });
 });

@@ -5,6 +5,7 @@ import {
   handleComboChat,
   resetComboRotation,
 } from "../../open-sse/services/combo.js";
+import { ACCOUNT_EXHAUSTED_ERROR_CODE } from "../../open-sse/config/errorConfig.js";
 
 describe("combo round-robin routing", () => {
   beforeEach(() => {
@@ -228,6 +229,36 @@ describe("combo round-robin routing", () => {
 
     expect(response.status).toBe(400);
     expect(calls).toEqual(["provider/model-b"]);
+  });
+
+  it("tries the next combo model when a handler marks all provider accounts unavailable", async () => {
+    const calls = [];
+    const response = await handleComboChat({
+      body: { messages: [{ role: "user", content: "hello" }] },
+      models: ["provider-a/model-a", "provider-b/model-b"],
+      handleSingleModel: async (_body, model) => {
+        calls.push(model);
+        if (model === "provider-a/model-a") {
+          return new Response(JSON.stringify({
+            error: {
+              message: "All accounts unavailable",
+              code: ACCOUNT_EXHAUSTED_ERROR_CODE,
+            },
+          }), {
+            status: 400,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        return new Response("provider-b fallback");
+      },
+      log: { info() {}, warn() {} },
+      comboName: "quota-combo",
+      comboStrategy: "fallback",
+    });
+
+    expect(response.ok).toBe(true);
+    await expect(response.text()).resolves.toBe("provider-b fallback");
+    expect(calls).toEqual(["provider-a/model-a", "provider-b/model-b"]);
   });
 
   it("tries the next configured model after an unclassified handler exception", async () => {

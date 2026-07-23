@@ -15,6 +15,8 @@ export const ERROR_TYPES = {
   504: { type: "server_error", code: "gateway_timeout" }
 };
 
+export const ACCOUNT_EXHAUSTED_ERROR_CODE = "all_accounts_unavailable";
+
 // Default error messages per status code (client-facing)
 export const DEFAULT_ERROR_MESSAGES = {
   400: "Bad request",
