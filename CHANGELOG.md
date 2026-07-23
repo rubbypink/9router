@@ -1,3 +1,13 @@
+# v0.5.40-9trip.7 (2026-07-23)
+
+## Fixes
+- **Gemini tools**: strip unsupported `encrypted` JSON Schema annotations without removing valid tool properties named `encrypted`
+
+# v0.5.40-9trip.6 (2026-07-23)
+
+## Fixes
+- **Streaming**: preserve a single OpenAI-compatible `[DONE]` sentinel when an upstream passthrough stream already supplied it
+
 # v0.5.40-9trip.5 (2026-07-23)
 
 ## Fixes
