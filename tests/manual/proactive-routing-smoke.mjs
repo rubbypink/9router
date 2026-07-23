@@ -91,7 +91,7 @@ async function runComboSkip(baseUrl) {
 async function runDispatchBudget(baseUrl) {
   const state = createUpstreamRequestState({ minEndpointIntervalMs: 0 });
   await runWithUpstreamRequestState(state, async () => {
-    for (let attempt = 0; attempt < 4; attempt++) {
+    for (let attempt = 0; attempt < 16; attempt++) {
       await runAsUpstreamDispatch("provider", async () => {
         const url = `${baseUrl}/budget`;
         await beforeUpstreamRequest(url);
@@ -103,7 +103,7 @@ async function runDispatchBudget(baseUrl) {
       { code: UPSTREAM_ATTEMPT_BUDGET_ERROR_CODE },
     );
   });
-  assert.equal(attempts.length, 4);
+  assert.equal(attempts.length, 16);
   return { resultCode: UPSTREAM_ATTEMPT_BUDGET_ERROR_CODE };
 }
 
@@ -177,7 +177,7 @@ try {
   } else if (scenario === "provider-all-accounts-unavailable") {
     assert.equal(attempts.length, 0);
     result = { resultCode: "all_accounts_unavailable" };
-  } else if (scenario === "dispatch-budget-four") {
+  } else if (scenario === "dispatch-budget-sixteen") {
     result = await runDispatchBudget(baseUrl);
   } else if (scenario === "nvidia-timeout-retry-then-fallback") {
     result = await runNvidia(baseUrl);

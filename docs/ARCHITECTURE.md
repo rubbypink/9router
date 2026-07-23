@@ -564,14 +564,14 @@ Environment variables actively used by code:
 
 ## Immutable Custom Release
 
-The approved gateway release is package `0.5.40-9trip.7` on upstream `0.5.40`
+The approved gateway release is package `0.5.40-9trip.8` on upstream `0.5.40`
 with routing contract `session-affinity/v2`. Build its archive with
-`npm run cli:pack`; it produces `9router-0.5.40-9trip.7.tgz` at the repository
+`npm run cli:pack`; it produces `9router-0.5.40-9trip.8.tgz` at the repository
 root. The release CLI never invokes global package updates or modifies a global
 `9router` binary.
 
 - `npm run release:install` extracts and validates that exact archive into
-  `$HOME/.local/share/9router/releases/0.5.40-9trip.7` without overwriting an
+  `$HOME/.local/share/9router/releases/0.5.40-9trip.8` without overwriting an
   existing release.
 - `npm run release:activate` validates the current and target releases, writes
   a SQLite/WAL/SHM snapshot, persists a prepared activation record, atomically

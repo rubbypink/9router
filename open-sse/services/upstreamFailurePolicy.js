@@ -11,6 +11,7 @@ export const NVIDIA_FUNCTION_INVOCATION_TIMEOUT_COOLDOWN_MS = 5_000;
 const QUOTA_TEXT = /\b(quota|rate limit|too many requests|usage limit|out of credits|no credits|spending limit)\b/i;
 const TRANSIENT_TEXT = /\b(timeout|timed out|overload(?:ed)?|temporarily unavailable|service unavailable|capacity|resource ?exhausted)\b/i;
 const CREDENTIAL_TEXT = /\b(no credentials|invalid api key|invalid token|unauthori[sz]ed|forbidden|authentication)\b/i;
+const PERMANENT_ACCOUNT_POLICY_TEXT = /\b(insufficient balance|account tier is insufficient)\b/i;
 const GEMINI_THOUGHT_SIGNATURE_TEXT = /\bthought[_ ]signature\b/i;
 const ACCOUNT_SCOPED_QUOTA_PROVIDERS = new Set(["codex", "cloudflare", "cloudflare-ai", "fm", "freemodel"]);
 const MODEL_SCOPED_QUOTA_PROVIDERS = new Set(["antigravity", "opencode-go", "gemini-cli"]);
@@ -61,7 +62,7 @@ export function classifyUpstreamFailure({ provider, status, error, errorCode, re
 
   if ([401, 402, 403].includes(status) || CREDENTIAL_TEXT.test(message)) {
     return result(FAILURE_CLASS.NO_CREDENTIALS, "account", "fallback", {
-      evidence: "credential-error",
+      evidence: PERMANENT_ACCOUNT_POLICY_TEXT.test(message) ? "account-policy" : "credential-error",
     });
   }
 

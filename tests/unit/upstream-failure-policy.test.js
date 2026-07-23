@@ -37,6 +37,26 @@ describe("upstream failure disposition", () => {
     });
   });
 
+  it("distinguishes permanent account-policy failures from generic credential failures", () => {
+    expect(classifyUpstreamFailure({
+      provider: "nvidia",
+      status: 403,
+      error: "Insufficient balance for this account tier",
+    })).toMatchObject({
+      failureClass: FAILURE_CLASS.NO_CREDENTIALS,
+      evidence: "account-policy",
+    });
+
+    expect(classifyUpstreamFailure({
+      provider: "nvidia",
+      status: 401,
+      error: "Unauthorized",
+    })).toMatchObject({
+      failureClass: FAILURE_CLASS.NO_CREDENTIALS,
+      evidence: "credential-error",
+    });
+  });
+
   it("fails open for ambiguous non-provider errors", () => {
     expect(classifyUpstreamFailure({
       provider: "openai",

@@ -105,6 +105,7 @@ async function paceEndpointStart(input, { intervalMs, now, sleep, signal }) {
 export function createUpstreamRequestState(overrides = {}) {
   return {
     attempts: 0,
+    attemptsByScope: Object.create(null),
     maxAttempts: overrides.maxAttempts ?? REQUEST_EXECUTION_POLICY.maxAttempts,
     minEndpointIntervalMs: overrides.minEndpointIntervalMs ?? REQUEST_EXECUTION_POLICY.minEndpointIntervalMs,
     now: overrides.now || Date.now,
@@ -128,10 +129,17 @@ export function runAsUpstreamDispatch(provider, operation, endpointHints = []) {
   const store = requestStorage.getStore();
   if (!store?.requestState) return operation();
   return requestStorage.run({
+    ...store,
     requestState: store.requestState,
     activeProvider: provider || null,
     dispatchOrigins: buildDispatchOrigins(endpointHints),
   }, operation);
+}
+
+export function runWithUpstreamAttemptScope(scope, operation) {
+  const store = requestStorage.getStore();
+  if (!store?.requestState) return operation();
+  return requestStorage.run({ ...store, attemptScope: scope || null }, operation);
 }
 
 export async function beforeUpstreamRequest(input, { signal } = {}) {
@@ -142,10 +150,14 @@ export async function beforeUpstreamRequest(input, { signal } = {}) {
   const inputOrigin = endpointOrigin(input);
   const isProviderEndpoint = !store?.dispatchOrigins?.size || store.dispatchOrigins.has(inputOrigin);
   if (requestState && store.activeProvider && isProviderEndpoint) {
-    if (requestState.attempts >= requestState.maxAttempts) {
+    const attempts = store.attemptScope
+      ? (requestState.attemptsByScope[store.attemptScope] || 0)
+      : requestState.attempts;
+    if (attempts >= requestState.maxAttempts) {
       throw new UpstreamAttemptBudgetError(requestState.maxAttempts);
     }
-    requestState.attempts++;
+    if (store.attemptScope) requestState.attemptsByScope[store.attemptScope] = attempts + 1;
+    else requestState.attempts++;
     requestState.lastEndpoint = canonicalEndpointKey(input);
     requestState.lastProvider = store.activeProvider;
   }

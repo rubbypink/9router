@@ -7,7 +7,7 @@ import { ACCOUNT_EXHAUSTED_ERROR_CODE } from "../config/errorConfig.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
-import { UPSTREAM_ATTEMPT_BUDGET_ERROR_CODE } from "./requestExecutionState.js";
+import { runWithUpstreamAttemptScope, UPSTREAM_ATTEMPT_BUDGET_ERROR_CODE } from "./requestExecutionState.js";
 
 // Hard capabilities = input modalities; missing one drops request data (e.g. image
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
@@ -286,7 +286,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
     await onModelSelected?.({ model: modelStr, index: i });
 
     try {
-      const result = await handleSingleModel(body, modelStr);
+      const result = await runWithUpstreamAttemptScope(modelStr, () => handleSingleModel(body, modelStr));
       
       // Success (2xx) - return response
       if (result.ok) {
@@ -316,15 +316,19 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         try { errorText = JSON.stringify(errorText); } catch { errorText = String(errorText); }
       }
 
-      if (errorCode === UPSTREAM_ATTEMPT_BUDGET_ERROR_CODE || errorCode === "gemini_thought_signature_missing") {
+      if (errorCode === "gemini_thought_signature_missing") {
         log.warn("COMBO", `Model ${modelStr} failed with terminal routing code`, { code: errorCode });
         return result;
       }
 
       // Check if should fallback to next model
-      const { shouldFallback, cooldownMs } = errorCode === ACCOUNT_EXHAUSTED_ERROR_CODE
-        ? { shouldFallback: true, cooldownMs: 0 }
-        : checkFallbackError(result.status, errorText);
+      let fallbackResult;
+      if (errorCode === UPSTREAM_ATTEMPT_BUDGET_ERROR_CODE || errorCode === ACCOUNT_EXHAUSTED_ERROR_CODE) {
+        fallbackResult = { shouldFallback: true, cooldownMs: 0 };
+      } else {
+        fallbackResult = checkFallbackError(result.status, errorText);
+      }
+      const { shouldFallback, cooldownMs } = fallbackResult;
       if (!shouldFallback) {
         log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
         return result;

@@ -9,6 +9,15 @@ const LOCAL_PROVIDER_ALIASES = {
   "xiaomi-tokenplan": "xiaomi-tokenplan",
 };
 
+const IMPLICIT_COMBO_ALIASES = Object.freeze({
+  "kimi-k2.6-code": "kimi-k2.6-cb",
+});
+
+export function resolveComboName(modelStr) {
+  if (typeof modelStr !== "string" || modelStr.includes("/")) return modelStr;
+  return IMPLICIT_COMBO_ALIASES[modelStr] || modelStr;
+}
+
 const RESERVED_PROVIDER_PREFIXES = new Set(Object.keys(LOCAL_PROVIDER_ALIASES));
 for (const entry of REGISTRY) {
   RESERVED_PROVIDER_PREFIXES.add(entry.id);
@@ -36,7 +45,8 @@ export async function resolveModelAlias(alias) {
  * Get full model info (parse or resolve)
  */
 export async function getModelInfo(modelStr) {
-  const parsed = parseModel(modelStr);
+  const resolvedModelStr = resolveComboName(modelStr);
+  const parsed = parseModel(resolvedModelStr);
 
   if (!parsed.isAlias) {
     // Provider-node prefixes are user-defined. They must not override built-in
@@ -75,7 +85,7 @@ export async function getModelInfo(modelStr) {
     return { provider: null, model: parsed.model };
   }
 
-  return getModelInfoCore(modelStr, getModelAliases);
+  return getModelInfoCore(resolvedModelStr, getModelAliases);
 }
 
 /**
@@ -83,10 +93,11 @@ export async function getModelInfo(modelStr) {
  * @returns {Promise<string[]|null>} Array of models or null if not a combo
  */
 export async function getComboModels(modelStr) {
+  const resolvedModelStr = resolveComboName(modelStr);
   // Only check if it's not in provider/model format
-  if (modelStr.includes("/")) return null;
+  if (resolvedModelStr.includes("/")) return null;
 
-  const combo = await getComboByName(modelStr);
+  const combo = await getComboByName(resolvedModelStr);
   if (combo && combo.models && combo.models.length > 0) {
     return combo.models;
   }
