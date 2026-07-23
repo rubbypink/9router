@@ -3,6 +3,7 @@
  */
 
 import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
+import { ACCOUNT_EXHAUSTED_ERROR_CODE } from "../config/errorConfig.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
@@ -286,10 +287,12 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
 
       // Extract error info from response
       let errorText = result.statusText || "";
+      let errorCode = null;
       let retryAfter = null;
       try {
         const errorBody = await result.clone().json();
         errorText = errorBody?.error?.message || errorBody?.error || errorBody?.message || errorText;
+        errorCode = errorBody?.error?.code || errorBody?.code || null;
         retryAfter = errorBody?.retryAfter || null;
       } catch {
         // Ignore JSON parse errors
@@ -306,7 +309,9 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       }
 
       // Check if should fallback to next model
-      const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText);
+      const { shouldFallback, cooldownMs } = errorCode === ACCOUNT_EXHAUSTED_ERROR_CODE
+        ? { shouldFallback: true, cooldownMs: 0 }
+        : checkFallbackError(result.status, errorText);
 
       if (!shouldFallback) {
         log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });

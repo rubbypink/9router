@@ -7,6 +7,7 @@ import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleTtsCore } from "open-sse/handlers/ttsCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
+import { ACCOUNT_EXHAUSTED_ERROR_CODE } from "open-sse/config/errorConfig.js";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import { handleComboChat } from "open-sse/services/combo.js";
 import * as log from "../utils/logger.js";
@@ -90,10 +91,20 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language) {
       if (credentials?.allRateLimited) {
         const msg = lastError || credentials.lastError || "Unavailable";
         const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
-        return unavailableResponse(status, `[${provider}/${model}] ${msg}`, credentials.retryAfter, credentials.retryAfterHuman);
+        return unavailableResponse(
+          status,
+          `[${provider}/${model}] ${msg}`,
+          credentials.retryAfter,
+          credentials.retryAfterHuman,
+          ACCOUNT_EXHAUSTED_ERROR_CODE,
+        );
       }
       if (excludeConnectionIds.size === 0) return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);
-      return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
+      return errorResponse(
+        lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE,
+        lastError || "All accounts unavailable",
+        ACCOUNT_EXHAUSTED_ERROR_CODE,
+      );
     }
 
     log.info("AUTH", `\x1b[32mUsing ${provider} account: ${credentials.connectionName}\x1b[0m`);
