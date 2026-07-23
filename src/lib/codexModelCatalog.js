@@ -10,7 +10,7 @@ import {
 } from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 
-export const CODEX_MODEL_CATALOG_CONTRACT_VERSION = "9router-codex-model-catalog/v2";
+export const CODEX_MODEL_CATALOG_CONTRACT_VERSION = "9router-codex-model-catalog/v3";
 export const CODEX_MODEL_CATALOG_TEMPLATE_SLUG = "__9router_catalog_template";
 
 const LLM_KIND = "llm";
@@ -137,6 +137,7 @@ function asCatalogTemplate(template) {
     display_name: "9router catalog template",
     visibility: "hide",
     supported_in_api: false,
+    supports_reasoning_summaries: true,
   };
 }
 
@@ -149,6 +150,7 @@ function asComboModel(template, combo, index) {
     visibility: "list",
     supported_in_api: true,
     priority: Number(template.priority || 0) + index + 1,
+    supports_reasoning_summaries: true,
     tool_mode: "direct",
     apply_patch_tool_type: null,
   };
