@@ -54,7 +54,7 @@ describe("9router immutable health contract", () => {
       threadAffinity: true,
       routingContractVersion: "session-affinity/v2",
       upstreamVersion: "0.5.40",
-      customRevision: "0.5.40-9trip.14",
+      customRevision: "0.5.40-9trip.15",
       affinitySchemaVersion: 3,
       affinityStore: {
         status: "enabled",
@@ -66,7 +66,7 @@ describe("9router immutable health contract", () => {
         },
       },
     });
-    expect(body.version).toBe("0.5.40-9trip.14");
+    expect(body.version).toBe("0.5.40-9trip.15");
     expect(body.affinityStore.snapshot).not.toHaveProperty("sessionKey");
   });
 });

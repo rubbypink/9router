@@ -14,7 +14,7 @@ const CORS_HEADERS = {
 
 const ROUTING_CONTRACT_VERSION = "session-affinity/v2";
 const UPSTREAM_VERSION = "0.5.40";
-const CUSTOM_REVISION = "0.5.40-9trip.14";
+const CUSTOM_REVISION = "0.5.40-9trip.15";
 const AFFINITY_SCHEMA_VERSION = 3;
 
 function nonNegativeInteger(value) {

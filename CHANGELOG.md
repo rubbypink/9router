@@ -1,3 +1,8 @@
+# v0.5.40-9trip.15 (2026-07-24)
+
+## Fixes
+- **NVIDIA DeepSeek V4 Pro**: strip OpenCode's unsupported `reasoningSummary` and `verbosity` request options for this exact provider/model pair
+
 # v0.5.40-9trip.14 (2026-07-23)
 
 ## Fixes
