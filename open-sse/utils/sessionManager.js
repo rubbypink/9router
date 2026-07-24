@@ -138,6 +138,12 @@ function extractAntigravitySession(body) {
 function extractClientSessionId(headers, body, scope = "") {
     const codexThread = headerValue(headers, "thread-id");
     if (codexThread) return codexThread;
+    // OpenCode clients send x-session-affinity as the primary session header
+    // (canonicalized alongside x-session-id in threadIdentity.js). Recognize it
+    // here so Gemini thought-signature continuity resolves the same stable
+    // session id across tool-call turns — mirroring codex's thread-id handling.
+    const opencodeAffinity = headerValue(headers, "x-session-affinity");
+    if (opencodeAffinity) return opencodeAffinity;
     const metadataThread = normalizeSessionId(body?.client_metadata?.thread_id);
     if (metadataThread) return metadataThread;
     const claude = extractClaudeCodeSession(body?.metadata?.user_id);

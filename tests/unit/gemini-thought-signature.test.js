@@ -231,6 +231,34 @@ describe("Gemini thought signature continuity", () => {
       .toBe("opaque-signature-sentinel");
   });
 
+  it("derives continuity from an OpenCode x-session-affinity thread before request translation", async () => {
+    const current = context();
+    signatures.storeGeminiThoughtSignature(current, {
+      ...tool,
+      thoughtSignature: "opaque-signature-sentinel",
+      now: Date.now(),
+    });
+    const { translateRequest } = await import("../../open-sse/translator/index.js");
+    const credentials = { rawHeaders: { "x-session-affinity": "thread-alpha" } };
+    const request = translateRequest("openai", "gemini", "gemini-2.5-pro", {
+      messages: [
+        {
+          role: "assistant",
+          tool_calls: [{
+            id: tool.toolCallId,
+            type: "function",
+            function: { name: tool.functionName, arguments: JSON.stringify(tool.arguments) },
+          }],
+        },
+        { role: "tool", tool_call_id: tool.toolCallId, content: "created" },
+      ],
+    }, true, credentials, "gemini");
+
+    expect(credentials._geminiContinuationContext).toMatchObject(current);
+    expect(request.contents.find((content) => content.role === "model").parts.find((part) => part.functionCall).thoughtSignature)
+      .toBe("opaque-signature-sentinel");
+  });
+
   it("rejects a native Gemini continuation that has no exact signature", async () => {
     const { openaiToGeminiRequest } = await import("../../open-sse/translator/request/openai-to-gemini.js");
     try {

@@ -72,6 +72,31 @@ describe("resolveSessionId", () => {
     expect(got).toBe("codex-thread-a");
   });
 
+  it("uses OpenCode x-session-affinity header before the shared session headers", () => {
+    const got = resolveSessionId({
+      headers: {
+        "x-session-affinity": "oc-affinity-a",
+        "session-id": "shared-parent-session",
+      },
+      body: bodyWithAssistant,
+      connectionId: "conn1",
+      scope: "opencode",
+    });
+
+    expect(got).toBe("oc-affinity-a");
+  });
+
+  it("resolves an OpenCode x-session-affinity header as the stable session id", () => {
+    const got = resolveSessionId({
+      headers: { "x-session-affinity": "oc-affinity-standalone" },
+      body: bodyWithAssistant,
+      connectionId: "conn1",
+      scope: "opencode",
+    });
+
+    expect(got).toBe("oc-affinity-standalone");
+  });
+
   it("keeps child Codex threads separate even when session-id is shared", () => {
     const common = {
       "session-id": "shared-parent-session",
