@@ -12,6 +12,13 @@ Two published artifacts live in this one repo:
 
 The code lives in `src/` (Next.js app + dashboard/compat APIs), `open-sse/` (the provider-agnostic routing/translation engine), `cli/` (the launcher package), and `tests/`.
 
+## Stable Production Baseline
+
+The current build is stable and serves production. Treat its platform structure and project configuration as protected:
+- Do not change the foundational architecture, directory/module structure, build/runtime tooling, deployment/process configuration, dependency setup, or project configuration unless the user explicitly approves that exact change.
+- Any change to core routing, translation, authentication, persistence, credential, quota, or release logic requires explicit user approval before implementation. First state the affected core behavior, the intended change, and its expected impact; then wait for approval.
+- Keep all unapproved work narrowly scoped to non-core behavior and preserve the current production baseline.
+
 ## Mandatory code-update delivery
 
 For every task that changes this project's code, complete the full delivery workflow before handoff:
