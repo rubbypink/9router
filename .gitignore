@@ -21,6 +21,8 @@ cli/.build-home/
 product
 # production
 /build
+# Local immutable release archives are installed outside the repository.
+/9router-*.tgz
 .idea/
 
 # misc
