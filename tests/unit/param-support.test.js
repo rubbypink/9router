@@ -52,4 +52,28 @@ describe("stripUnsupportedParams", () => {
 
     expect(body.max_tokens).toBe(64000);
   });
+
+  it("drops NVIDIA-rejected options for DeepSeek V4 Pro", () => {
+    const body = { reasoningSummary: "auto", verbosity: "low", temperature: 0.7 };
+
+    stripUnsupportedParams("nvidia", "deepseek-ai/deepseek-v4-pro", body);
+
+    expect(body).toEqual({ temperature: 0.7 });
+  });
+
+  it("keeps NVIDIA options for DeepSeek V4 Flash", () => {
+    const body = { reasoningSummary: "auto", verbosity: "low" };
+
+    stripUnsupportedParams("nvidia", "deepseek-ai/deepseek-v4-flash", body);
+
+    expect(body).toEqual({ reasoningSummary: "auto", verbosity: "low" });
+  });
+
+  it("keeps DeepSeek V4 Pro options for non-NVIDIA providers", () => {
+    const body = { reasoningSummary: "auto", verbosity: "low" };
+
+    stripUnsupportedParams("venice", "deepseek-v4-pro", body);
+
+    expect(body).toEqual({ reasoningSummary: "auto", verbosity: "low" });
+  });
 });

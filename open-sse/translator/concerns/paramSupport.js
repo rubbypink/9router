@@ -12,6 +12,8 @@ const STRIP_RULES = [
   { provider: "github", match: /gpt-5\.4/i, drop: ["temperature"] },
   // GitHub Copilot Claude (except opus/sonnet 4.6): thinking + reasoning_effort rejected. #713
   { provider: "github", match: (m) => /claude/i.test(m) && !/claude.*(opus|sonnet).*4\.6/i.test(m), drop: ["thinking", "reasoning_effort"] },
+  // NVIDIA DeepSeek V4 Pro rejects these OpenCode OpenAI-compatible options.
+  { provider: "nvidia", match: /^deepseek-ai\/deepseek-v4-pro$/i, drop: ["reasoningSummary", "verbosity"] },
   // Cloudflare Workers AI: content must be plain string, rejects OpenAI content-part array (#1926)
   { provider: "cloudflare-ai", flattenContent: true },
   { provider: "volcengine-ark", match: /glm-5/i, clampToModelMaxOutput: true },
